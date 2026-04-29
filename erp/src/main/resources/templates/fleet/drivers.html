@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Flota y Conductores — Lleva ERP</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"/>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet"
+          integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"/>
+    <style>
+        .expediente-thumb {
+            width: 100%;
+            max-width: 220px;
+            height: 140px;
+            object-fit: cover;
+        }
+
+        .expediente-doc-card .card-header {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .modal-expediente-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            color: #fff;
+        }
+
+        .modal-expediente-header .btn-close {
+            filter: invert(1);
+        }
+    </style>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1"><i class="fas fa-truck-moving me-2"></i>Flota y Conductores</span>
+    </div>
+</nav>
+
+<div class="container-fluid px-4 pb-5">
+    <ul class="nav nav-tabs" id="fleetTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="pendientes-tab" data-bs-toggle="tab" data-bs-target="#pendientes"
+                    type="button" role="tab" aria-controls="pendientes" aria-selected="true">
+                <i class="fas fa-hourglass-half me-1"></i> Pendientes
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="activos-tab" data-bs-toggle="tab" data-bs-target="#activos"
+                    type="button" role="tab" aria-controls="activos" aria-selected="false">
+                <i class="fas fa-check-circle me-1"></i> Activos
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content border border-top-0 bg-white p-4 rounded-bottom shadow-sm" id="fleetTabsContent">
+        <div class="tab-pane fade show active" id="pendientes" role="tabpanel" aria-labelledby="pendientes-tab">
+            <div th:if="${message}" class="alert alert-success alert-dismissible fade show" role="alert">
+                <span th:text="${message}">OK</span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+            </div>
+            <div th:if="${error}" class="alert alert-danger alert-dismissible fade show" role="alert">
+                <span th:text="${error}">Error</span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+            </div>
+            <h5 class="mb-3 text-secondary"><i class="fas fa-folder-open me-2"></i>Solicitudes pendientes de aprobación</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                    <tr>
+                        <th>Conductor</th>
+                        <th>Teléfono</th>
+                        <th>DNI</th>
+                        <th>Vehículo</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:if="${pendingDrivers == null or pendingDrivers.isEmpty()}">
+                        <td colspan="5" class="text-center text-muted py-4">No hay conductores pendientes.</td>
+                    </tr>
+                    <tr th:each="d : ${pendingDrivers}">
+                        <td th:text="${d.fullName}">Nombre</td>
+                        <td th:text="${d.phone}">999</td>
+                        <td th:text="${d.dni}">—</td>
+                        <td>
+                            <span th:text="${d.carBrand != null ? d.carBrand : ''}">Marca</span>
+                            <span th:text="${d.carModel != null ? ' ' + d.carModel : ''}">Modelo</span>
+                            <span class="badge bg-secondary ms-1" th:text="${d.carPlate}">PLACA</span>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary btn-ver-expediente"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#expedienteModal"
+                                    th:data-driver-id="${d.id}"
+                                    th:data-full-name="${d.fullName}"
+                                    th:data-dni-front="${d.dniFrontUrl != null ? d.dniFrontUrl : ''}"
+                                    th:data-dni-back="${d.dniBackUrl != null ? d.dniBackUrl : ''}"
+                                    th:data-license="${d.licenseUrl != null ? d.licenseUrl : ''}"
+                                    th:data-soat="${d.soatUrl != null ? d.soatUrl : ''}"
+                                    th:data-property-card="${d.propertyCardUrl != null ? d.propertyCardUrl : ''}"
+                                    th:data-profile-pic="${d.profilePicUrl != null ? d.profilePicUrl : ''}">
+                                <i class="fas fa-file-alt me-1"></i> Ver Expediente
+                            </button>
+                            <form th:action="@{/fleet/drivers/{id}/approve(id=${d.id})}" method="post" class="d-inline ms-1">
+                                <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+                                <button type="submit"
+                                        th:id="|btn-approve-${d.id}|"
+                                        class="btn btn-sm btn-success btn-aprobar"
+                                        disabled
+                                        title="Abre primero el expediente digital">
+                                    <i class="fas fa-check me-1"></i> Aprobar
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="activos" role="tabpanel" aria-labelledby="activos-tab">
+            <p class="text-muted mb-0"><i class="fas fa-info-circle me-1"></i> Listado de conductores activos (integrar con su controlador).</p>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Expediente Digital -->
+<div class="modal fade" id="expedienteModal" tabindex="-1" aria-labelledby="expedienteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header modal-expediente-header">
+                <h5 class="modal-title" id="expedienteModalLabel">
+                    <i class="fas fa-folder-open me-2"></i> Expediente digital
+                    <span id="expedienteConductorNombre" class="fw-normal ms-2"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    <i class="fas fa-up-right-from-square me-1"></i>
+                    Pulsa una imagen para abrirla a tamaño completo en una nueva pestaña.
+                </p>
+                <div id="expedienteGrid" class="row g-3">
+                    <!-- Rellenado por JavaScript -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i> Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+<script th:inline="javascript">
+    (function () {
+        const modalEl = document.getElementById('expedienteModal');
+        const gridEl = document.getElementById('expedienteGrid');
+        const titleNameEl = document.getElementById('expedienteConductorNombre');
+        let currentDriverId = null;
+
+        const DOC_SPECS = [
+            {dataKey: 'dniFront', label: 'DNI — cara frontal', icon: 'fa-id-card'},
+            {dataKey: 'dniBack', label: 'DNI — cara posterior', icon: 'fa-id-badge'},
+            {dataKey: 'license', label: 'Licencia de conducir (brevete)', icon: 'fa-address-card'},
+            {dataKey: 'soat', label: 'SOAT', icon: 'fa-file-shield'},
+            {dataKey: 'propertyCard', label: 'Tarjeta de propiedad', icon: 'fa-file-contract'},
+            {dataKey: 'profilePic', label: 'Foto de perfil', icon: 'fa-user-circle'}
+        ];
+
+        function escapeHtml(s) {
+            if (!s) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function buildCell(url, label, iconClass) {
+            const col = document.createElement('div');
+            col.className = 'col-md-4 col-sm-6';
+
+            const card = document.createElement('div');
+            card.className = 'card h-100 border-secondary expediente-doc-card shadow-sm';
+
+            const header = document.createElement('div');
+            header.className = 'card-header py-2 bg-light';
+            header.innerHTML = '<i class="fas ' + iconClass + ' me-2 text-primary"></i>' + escapeHtml(label);
+
+            const body = document.createElement('div');
+            body.className = 'card-body text-center p-3';
+
+            if (url && url.trim().length > 0) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.className = 'd-inline-block';
+                const img = document.createElement('img');
+                img.src = url;
+                img.alt = label;
+                img.className = 'img-thumbnail expediente-thumb';
+                img.loading = 'lazy';
+                a.appendChild(img);
+                body.appendChild(a);
+            } else {
+                body.innerHTML = '<div class="text-muted py-4"><i class="fas fa-image-slash fa-2x mb-2 d-block"></i><span class="small">No cargado</span></div>';
+            }
+
+            card.appendChild(header);
+            card.appendChild(body);
+            col.appendChild(card);
+            return col;
+        }
+
+        function fillGridFromButton(btn) {
+            gridEl.innerHTML = '';
+            const ds = btn.dataset;
+            titleNameEl.textContent = ds.fullName ? '— ' + ds.fullName : '';
+
+            const map = {
+                dniFront: ds.dniFront,
+                dniBack: ds.dniBack,
+                license: ds.license,
+                soat: ds.soat,
+                propertyCard: ds.propertyCard,
+                profilePic: ds.profilePic
+            };
+
+            DOC_SPECS.forEach(function (spec) {
+                const url = map[spec.dataKey];
+                gridEl.appendChild(buildCell(url, spec.label, spec.icon));
+            });
+        }
+
+        document.querySelectorAll('.btn-ver-expediente').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                currentDriverId = btn.dataset.driverId;
+                fillGridFromButton(btn);
+            });
+        });
+
+        modalEl.addEventListener('shown.bs.modal', function () {
+            if (!currentDriverId) {
+                return;
+            }
+            const approveBtn = document.getElementById('btn-approve-' + currentDriverId);
+            if (approveBtn) {
+                approveBtn.disabled = false;
+                approveBtn.removeAttribute('title');
+            }
+        });
+    })();
+</script>
+</body>
+</html>

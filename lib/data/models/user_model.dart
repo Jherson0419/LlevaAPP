@@ -1,0 +1,191 @@
+import '../../domain/entities/user.dart';
+
+/// Modelo de datos para la tabla `profiles` de Supabase.
+///
+/// Se encarga de la serialización/deserialización entre JSON y [UserEntity].
+class UserModel extends UserEntity {
+  const UserModel({
+    required super.id,
+    required super.phone,
+    required super.role,
+    super.isDriverApplicant = false,
+    required super.fullName,
+    super.email,
+    super.dni,
+    super.carPlate,
+    super.carBrand,
+    super.carModel,
+    super.isApproved = true,
+    super.isBanned = false,
+    super.carYear,
+    super.carColor,
+    super.soatExpiration,
+    super.propertyCardExpiration,
+    super.technicalReviewExpiration,
+    super.licenseCategory,
+    super.licenseNumber,
+    super.birthDate,
+    super.dniFrontUrl,
+    super.dniBackUrl,
+    super.licenseUrl,
+    super.soatUrl,
+    super.propertyCardUrl,
+    super.profilePicUrl,
+  });
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'] as String,
+      phone: json['phone'] as String,
+      role: json['role'] as String,
+      isDriverApplicant: _parseBool(json['is_driver_applicant'], false),
+      fullName: json['full_name'] as String,
+      email: json['email']?.toString(),
+      dni: json['dni']?.toString(),
+      carPlate: json['car_plate']?.toString(),
+      carBrand: json['car_brand']?.toString(),
+      carModel: json['car_model']?.toString(),
+      isApproved: _parseBool(json['is_approved'], false),
+      isBanned: _parseBool(json['is_banned'], false),
+      carYear: _parseNullableInt(json['car_year']),
+      carColor: json['car_color']?.toString(),
+      soatExpiration: _parseNullableDateTime(json['soat_expiration']),
+      propertyCardExpiration:
+          _parseNullableDateTime(json['property_card_expiration']),
+      technicalReviewExpiration:
+          _parseNullableDateTime(json['technical_review_expiration']),
+      licenseCategory: json['license_category']?.toString(),
+      licenseNumber: json['license_number']?.toString(),
+      birthDate: _parseNullableDateTime(json['birth_date']),
+      dniFrontUrl: json['dni_front_url']?.toString(),
+      dniBackUrl: json['dni_back_url']?.toString(),
+      licenseUrl: json['license_url']?.toString(),
+      soatUrl: json['soat_url']?.toString(),
+      propertyCardUrl: json['property_card_url']?.toString(),
+      profilePicUrl: json['profile_pic_url']?.toString(),
+    );
+  }
+
+  static int? _parseNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static DateTime? _parseNullableDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
+  static bool _parseBool(dynamic value, bool defaultValue) {
+    if (value == null) return defaultValue;
+    if (value is bool) return value;
+    if (value is String) {
+      final s = value.toLowerCase();
+      if (s == 'true') return true;
+      if (s == 'false') return false;
+    }
+    if (value is num) return value != 0;
+    return defaultValue;
+  }
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'phone': phone,
+      'role': role,
+      'is_driver_applicant': isDriverApplicant,
+      'full_name': fullName,
+      'email': email,
+      'dni': dni,
+      'car_plate': carPlate,
+      'car_brand': carBrand,
+      'car_model': carModel,
+      'is_approved': isApproved,
+      'is_banned': isBanned,
+      'car_year': carYear,
+      'car_color': carColor,
+      'soat_expiration': soatExpiration?.toUtc().toIso8601String(),
+      'property_card_expiration':
+          propertyCardExpiration?.toUtc().toIso8601String(),
+      'technical_review_expiration':
+          technicalReviewExpiration?.toUtc().toIso8601String(),
+      'license_category': licenseCategory,
+      'license_number': licenseNumber,
+      'birth_date': birthDate?.toUtc().toIso8601String(),
+      'dni_front_url': dniFrontUrl,
+      'dni_back_url': dniBackUrl,
+      'license_url': licenseUrl,
+      'soat_url': soatUrl,
+      'property_card_url': propertyCardUrl,
+      'profile_pic_url': profilePicUrl,
+    };
+
+    if (id != 'temporal' && id.isNotEmpty) {
+      map['id'] = id;
+    }
+
+    return map;
+  }
+
+  UserModel copyWith({
+    String? id,
+    String? phone,
+    String? role,
+    bool? isDriverApplicant,
+    String? fullName,
+    String? email,
+    String? dni,
+    String? carPlate,
+    String? carBrand,
+    String? carModel,
+    bool? isApproved,
+    bool? isBanned,
+    int? carYear,
+    String? carColor,
+    DateTime? soatExpiration,
+    DateTime? propertyCardExpiration,
+    DateTime? technicalReviewExpiration,
+    String? licenseCategory,
+    String? licenseNumber,
+    DateTime? birthDate,
+    String? dniFrontUrl,
+    String? dniBackUrl,
+    String? licenseUrl,
+    String? soatUrl,
+    String? propertyCardUrl,
+    String? profilePicUrl,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      phone: phone ?? this.phone,
+      role: role ?? this.role,
+      isDriverApplicant: isDriverApplicant ?? this.isDriverApplicant,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      dni: dni ?? this.dni,
+      carPlate: carPlate ?? this.carPlate,
+      carBrand: carBrand ?? this.carBrand,
+      carModel: carModel ?? this.carModel,
+      isApproved: isApproved ?? this.isApproved,
+      isBanned: isBanned ?? this.isBanned,
+      carYear: carYear ?? this.carYear,
+      carColor: carColor ?? this.carColor,
+      soatExpiration: soatExpiration ?? this.soatExpiration,
+      propertyCardExpiration:
+          propertyCardExpiration ?? this.propertyCardExpiration,
+      technicalReviewExpiration:
+          technicalReviewExpiration ?? this.technicalReviewExpiration,
+      licenseCategory: licenseCategory ?? this.licenseCategory,
+      licenseNumber: licenseNumber ?? this.licenseNumber,
+      birthDate: birthDate ?? this.birthDate,
+      dniFrontUrl: dniFrontUrl ?? this.dniFrontUrl,
+      dniBackUrl: dniBackUrl ?? this.dniBackUrl,
+      licenseUrl: licenseUrl ?? this.licenseUrl,
+      soatUrl: soatUrl ?? this.soatUrl,
+      propertyCardUrl: propertyCardUrl ?? this.propertyCardUrl,
+      profilePicUrl: profilePicUrl ?? this.profilePicUrl,
+    );
+  }
+}
