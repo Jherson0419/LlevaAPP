@@ -1,4 +1,5 @@
 import '../../domain/entities/user.dart';
+import '../../domain/entities/document_review_status.dart';
 
 /// Modelo de datos para la tabla `profiles` de Supabase.
 ///
@@ -31,6 +32,11 @@ class UserModel extends UserEntity {
     super.soatUrl,
     super.propertyCardUrl,
     super.profilePicUrl,
+    super.dniFrontStatus = 'PENDING',
+    super.dniBackStatus = 'PENDING',
+    super.licenseStatus = 'PENDING',
+    super.soatStatus = 'PENDING',
+    super.propertyCardStatus = 'PENDING',
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -63,7 +69,16 @@ class UserModel extends UserEntity {
       soatUrl: json['soat_url']?.toString(),
       propertyCardUrl: json['property_card_url']?.toString(),
       profilePicUrl: json['profile_pic_url']?.toString(),
+      dniFrontStatus: _parseStatus(json['dni_front_status']),
+      dniBackStatus: _parseStatus(json['dni_back_status']),
+      licenseStatus: _parseStatus(json['license_status']),
+      soatStatus: _parseStatus(json['soat_status']),
+      propertyCardStatus: _parseStatus(json['property_card_status']),
     );
+  }
+
+  static String _parseStatus(dynamic value) {
+    return DocumentReviewStatus.fromRaw(value).value;
   }
 
   static int? _parseNullableInt(dynamic value) {
@@ -120,6 +135,11 @@ class UserModel extends UserEntity {
       'soat_url': soatUrl,
       'property_card_url': propertyCardUrl,
       'profile_pic_url': profilePicUrl,
+      'dni_front_status': dniFrontStatus,
+      'dni_back_status': dniBackStatus,
+      'license_status': licenseStatus,
+      'soat_status': soatStatus,
+      'property_card_status': propertyCardStatus,
     };
 
     if (id != 'temporal' && id.isNotEmpty) {
@@ -156,6 +176,11 @@ class UserModel extends UserEntity {
     String? soatUrl,
     String? propertyCardUrl,
     String? profilePicUrl,
+    String? dniFrontStatus,
+    String? dniBackStatus,
+    String? licenseStatus,
+    String? soatStatus,
+    String? propertyCardStatus,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -186,6 +211,12 @@ class UserModel extends UserEntity {
       soatUrl: soatUrl ?? this.soatUrl,
       propertyCardUrl: propertyCardUrl ?? this.propertyCardUrl,
       profilePicUrl: profilePicUrl ?? this.profilePicUrl,
+      dniFrontStatus: _parseStatus(dniFrontStatus ?? this.dniFrontStatus),
+      dniBackStatus: _parseStatus(dniBackStatus ?? this.dniBackStatus),
+      licenseStatus: _parseStatus(licenseStatus ?? this.licenseStatus),
+      soatStatus: _parseStatus(soatStatus ?? this.soatStatus),
+      propertyCardStatus:
+          _parseStatus(propertyCardStatus ?? this.propertyCardStatus),
     );
   }
 }

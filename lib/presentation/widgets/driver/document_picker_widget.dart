@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/entities/document_review_status.dart';
 
 /// Selector de imagen con vista previa para documentos del conductor.
 class DocumentPickerWidget extends StatelessWidget {
@@ -12,11 +13,21 @@ class DocumentPickerWidget extends StatelessWidget {
     required this.label,
     required this.file,
     required this.onFileChanged,
+    this.remoteImageUrl,
+    this.status = DocumentReviewStatus.pending,
+    this.isEditable = true,
+    this.onBlockedTap,
+    this.showStatus = true,
   });
 
   final String label;
   final File? file;
   final ValueChanged<File?> onFileChanged;
+  final String? remoteImageUrl;
+  final DocumentReviewStatus status;
+  final bool isEditable;
+  final VoidCallback? onBlockedTap;
+  final bool showStatus;
 
   static final _picker = ImagePicker();
 
@@ -95,35 +106,86 @@ class DocumentPickerWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (
+      IconData statusIcon,
+      Color statusColor,
+      String statusText,
+    ) = switch (status) {
+      DocumentReviewStatus.approved => (
+          Icons.check_circle,
+          AppTheme.successGreen,
+          'Aprobado',
+        ),
+      DocumentReviewStatus.rejected => (
+          Icons.error,
+          AppTheme.errorRed,
+          'Rechazado',
+        ),
+      DocumentReviewStatus.pending => (
+          Icons.history,
+          Colors.orangeAccent,
+          'En revisión',
+        ),
+    };
+
+    final hasRemoteImage =
+        remoteImageUrl != null && remoteImageUrl!.trim().isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppTheme.darkTextSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
+        if (showStatus)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppTheme.darkTextSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(statusIcon, color: statusColor, size: 18),
+              const SizedBox(width: 4),
+              Text(
+                statusText,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          )
+        else
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.darkTextSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
         const SizedBox(height: 8),
         Material(
           color: AppTheme.darkSurfaceElevated,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
-            onTap: () => _pick(context),
+            onTap: () {
+              if (!isEditable) {
+                onBlockedTap?.call();
+                return;
+              }
+              _pick(context);
+            },
             borderRadius: BorderRadius.circular(14),
             child: AspectRatio(
               aspectRatio: 1.4,
-              child: file == null
-                  ? const Center(
-                      child: Icon(
-                        Icons.add_a_photo_outlined,
-                        size: 40,
-                        color: AppTheme.darkTextSecondary,
-                      ),
-                    )
-                  : ClipRRect(
+              child: file != null
+                  ? ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: Image.file(
                         file!,
@@ -131,7 +193,24 @@ class DocumentPickerWidget extends StatelessWidget {
                         width: double.infinity,
                         height: double.infinity,
                       ),
-                    ),
+                    )
+                  : hasRemoteImage
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.network(
+                            remoteImageUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                          ),
+                        )
+                      : const Center(
+                          child: Icon(
+                            Icons.add_a_photo_outlined,
+                            size: 40,
+                            color: AppTheme.darkTextSecondary,
+                          ),
+                        ),
             ),
           ),
         ),

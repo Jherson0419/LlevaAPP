@@ -31,6 +31,11 @@ class UserEntity extends Equatable {
   final String? soatUrl;
   final String? propertyCardUrl;
   final String? profilePicUrl;
+  final String dniFrontStatus;
+  final String dniBackStatus;
+  final String licenseStatus;
+  final String soatStatus;
+  final String propertyCardStatus;
 
   const UserEntity({
     required this.id,
@@ -59,6 +64,11 @@ class UserEntity extends Equatable {
     this.soatUrl,
     this.propertyCardUrl,
     this.profilePicUrl,
+    this.dniFrontStatus = 'PENDING',
+    this.dniBackStatus = 'PENDING',
+    this.licenseStatus = 'PENDING',
+    this.soatStatus = 'PENDING',
+    this.propertyCardStatus = 'PENDING',
   });
 
   @override
@@ -89,5 +99,10 @@ class UserEntity extends Equatable {
         soatUrl,
         propertyCardUrl,
         profilePicUrl,
+        dniFrontStatus,
+        dniBackStatus,
+        licenseStatus,
+        soatStatus,
+        propertyCardStatus,
       ];
 }

@@ -28,6 +28,7 @@ import '../../presentation/screens/client/client_help_screen.dart';
 import '../../presentation/screens/client/client_support_screen.dart';
 import '../../presentation/screens/history/ride_history_screen.dart';
 import '../../presentation/screens/driver/become_driver_screen.dart';
+import '../../presentation/screens/driver/driver_rejected_documents_screen.dart';
 import '../../presentation/screens/driver/driver_route_placeholder_screen.dart';
 import '../../presentation/screens/driver_profile/driver_profile_screen.dart';
 import '../../presentation/screens/driver_wallet/driver_wallet_screen.dart';
@@ -44,6 +45,7 @@ class AppRouter {
   static const String driverSettingsPath = '/driver_settings';
 
   static const String driverApprovalPath = '/driver_approval';
+  static const String driverRejectedDocsPath = '/driver_rejected_documents';
 
   static DateTime? _parseIsoDate(String? value) {
     if (value == null || value.isEmpty) return null;
@@ -66,7 +68,19 @@ class AppRouter {
         path == driverSupportPath ||
         path == driverHelpPath ||
         path == driverSettingsPath ||
+        path == driverRejectedDocsPath ||
         path == '/city_requests';
+  }
+
+  static bool _hasRejectedDocuments(AuthState state) {
+    if (state is! AuthAuthenticated) return false;
+    bool isRejected(String value) => value.trim().toUpperCase() == 'REJECTED';
+    final user = state.user;
+    return isRejected(user.dniFrontStatus) ||
+        isRejected(user.dniBackStatus) ||
+        isRejected(user.licenseStatus) ||
+        isRejected(user.soatStatus) ||
+        isRejected(user.propertyCardStatus);
   }
 
   static String? _authRedirect(
@@ -107,6 +121,7 @@ class AppRouter {
 
     if (shouldUseDriverHome(user, mode)) {
       if (path == '/become-driver') {
+        if (_hasRejectedDocuments(authState)) return null;
         return '/dashboard';
       }
       if (user.isBanned) {
@@ -289,7 +304,14 @@ class AppRouter {
         GoRoute(
           path: '/become-driver',
           name: 'become-driver',
-          builder: (context, state) => const BecomeDriverScreen(),
+          builder: (context, state) => BecomeDriverScreen(
+            initialDocumentToFix: state.uri.queryParameters['doc'],
+          ),
+        ),
+        GoRoute(
+          path: driverRejectedDocsPath,
+          name: 'driver-rejected-documents',
+          builder: (context, state) => const DriverRejectedDocumentsScreen(),
         ),
         GoRoute(
           path: '/client-profile',

@@ -107,6 +107,11 @@ class UserRepositoryImpl implements UserRepository {
       'soat_url': u.soatUrl,
       'property_card_url': u.propertyCardUrl,
       'profile_pic_url': u.profilePicUrl,
+      'dni_front_status': u.dniFrontStatus,
+      'dni_back_status': u.dniBackStatus,
+      'license_status': u.licenseStatus,
+      'soat_status': u.soatStatus,
+      'property_card_status': u.propertyCardStatus,
     };
     map.removeWhere((_, v) => v == null);
     return map;

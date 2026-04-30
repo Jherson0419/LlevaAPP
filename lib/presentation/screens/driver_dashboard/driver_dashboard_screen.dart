@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/location_helper.dart';
@@ -9,6 +10,7 @@ import '../../../core/utils/marker_helper.dart';
 import '../../../data/datasources/remote/directions_service.dart';
 import '../../../domain/entities/ride_entity.dart';
 import '../../bloc/auth/auth_bloc.dart';
+import '../../bloc/auth/auth_event.dart';
 import '../../bloc/auth/auth_state.dart';
 import '../../bloc/driver_stats/driver_stats_cubit.dart';
 import '../../bloc/driver_stats/driver_stats_state.dart';
@@ -56,6 +58,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      context.read<AuthBloc>().add(const RefreshProfileEvent());
       final auth = context.read<AuthBloc>().state;
       if (auth is AuthAuthenticated) {
         context.read<DriverStatsCubit>().loadTodayStats(auth.user.id);
@@ -503,9 +506,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final drawerWidth = MediaQuery.sizeOf(context).width * 0.78;
-
+    final authState = context.watch<AuthBloc>().state;
     return BlocBuilder<DriverStatusBloc, DriverStatusState>(
       builder: (context, blocState) {
+        final hasRejectedDocuments = authState is AuthAuthenticated &&
+            _hasRejectedDocuments(authState.user);
+        final showRejectedBanner =
+            hasRejectedDocuments && blocState is DriverOffline;
         final immersiveMode = blocState is DriverNegotiating;
         final bottomNavHeight = immersiveMode ? 0.0 : 56.0;
 
@@ -670,9 +677,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: _buildAvailabilityToggle(context, state),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: _buildAvailabilityToggle(context, state),
+                        ),
+                        if (showRejectedBanner) ...[
+                          const SizedBox(height: 10),
+                          _buildRejectedDocumentsBanner(context),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -1237,6 +1253,23 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     return GestureDetector(
       onTap: () {
+        final isTryingGoOnline = state is DriverOffline;
+        if (isTryingGoOnline) {
+          final authState = context.read<AuthBloc>().state;
+          if (authState is AuthAuthenticated &&
+              _hasRejectedDocuments(authState.user)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Revisa tus documentos: tienes archivos rechazados.',
+                ),
+                backgroundColor: AppTheme.errorRed,
+              ),
+            );
+            context.push('/driver_rejected_documents');
+            return;
+          }
+        }
         context.read<DriverStatusBloc>().add(const ToggleStatus());
       },
       child: AnimatedContainer(
@@ -1284,6 +1317,49 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _hasRejectedDocuments(user) {
+    bool isRejected(String value) => value.trim().toUpperCase() == 'REJECTED';
+    return isRejected(user.dniFrontStatus) ||
+        isRejected(user.dniBackStatus) ||
+        isRejected(user.licenseStatus) ||
+        isRejected(user.soatStatus) ||
+        isRejected(user.propertyCardStatus);
+  }
+
+  Widget _buildRejectedDocumentsBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.errorRed.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.errorRed.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 20),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Tienes documentos rechazados. Corrígelos para conectarte.',
+              style: TextStyle(
+                color: AppTheme.darkText,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => context.push('/driver_rejected_documents'),
+            child: const Text('Revisar'),
+          ),
+        ],
       ),
     );
   }

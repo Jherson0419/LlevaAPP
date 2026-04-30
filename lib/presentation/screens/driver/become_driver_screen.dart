@@ -11,6 +11,7 @@ import '../../../core/keys/app_overlay_keys.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/user_model.dart';
+import '../../../domain/entities/document_review_status.dart';
 import '../../../domain/entities/user.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_event.dart';
@@ -21,13 +22,24 @@ const _kLicenseCategories = ['A-I', 'A-IIa', 'A-IIb', 'A-III'];
 
 /// Fase 3: ascenso a conductor (pasajero → solicitud con documentos).
 class BecomeDriverScreen extends StatefulWidget {
-  const BecomeDriverScreen({super.key});
+  const BecomeDriverScreen({
+    super.key,
+    this.initialDocumentToFix,
+  });
+
+  final String? initialDocumentToFix;
 
   @override
   State<BecomeDriverScreen> createState() => _BecomeDriverScreenState();
 }
 
 class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
+  static const _docDniFront = 'dniFront';
+  static const _docDniBack = 'dniBack';
+  static const _docLicense = 'license';
+  static const _docSoat = 'soat';
+  static const _docPropertyCard = 'propertyCard';
+
   final _formVehicle = GlobalKey<FormState>();
   final _formLegal = GlobalKey<FormState>();
 
@@ -55,6 +67,18 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
   bool _awaitingBlocResult = false;
 
   static final _dateFmt = DateFormat('dd/MM/yyyy');
+
+  @override
+  void initState() {
+    super.initState();
+    final target = widget.initialDocumentToFix?.trim();
+    if (target == null || target.isEmpty) return;
+    _currentStep = 2;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _openPickerForDocument(target);
+    });
+  }
 
   @override
   void dispose() {
@@ -123,12 +147,21 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
 
   bool _validateDocuments() {
     final missing = <String>[];
-    if (_profilePic == null) missing.add('Foto de perfil');
-    if (_dniFront == null) missing.add('DNI frontal');
-    if (_dniBack == null) missing.add('DNI posterior');
-    if (_licenseDoc == null) missing.add('Licencia');
-    if (_soatDoc == null) missing.add('SOAT');
-    if (_propertyDoc == null) missing.add('Tarjeta de propiedad');
+    final authState = context.read<AuthBloc>().state;
+    final user = authState is AuthAuthenticated ? authState.user : null;
+    bool hasImage(File? localFile, String? remoteUrl) {
+      if (localFile != null) return true;
+      return remoteUrl != null && remoteUrl.trim().isNotEmpty;
+    }
+
+    if (!hasImage(_profilePic, user?.profilePicUrl)) missing.add('Foto de perfil');
+    if (!hasImage(_dniFront, user?.dniFrontUrl)) missing.add('DNI frontal');
+    if (!hasImage(_dniBack, user?.dniBackUrl)) missing.add('DNI posterior');
+    if (!hasImage(_licenseDoc, user?.licenseUrl)) missing.add('Licencia');
+    if (!hasImage(_soatDoc, user?.soatUrl)) missing.add('SOAT');
+    if (!hasImage(_propertyDoc, user?.propertyCardUrl)) {
+      missing.add('Tarjeta de propiedad');
+    }
     if (missing.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -162,20 +195,32 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
     });
 
     final storage = di.sl<StorageService>();
-    String? profileUrl;
-    String? dniFrontUrl;
-    String? dniBackUrl;
-    String? licenseUrl;
-    String? soatUrl;
-    String? propertyUrl;
+    String? profileUrl = baseModel.profilePicUrl;
+    String? dniFrontUrl = baseModel.dniFrontUrl;
+    String? dniBackUrl = baseModel.dniBackUrl;
+    String? licenseUrl = baseModel.licenseUrl;
+    String? soatUrl = baseModel.soatUrl;
+    String? propertyUrl = baseModel.propertyCardUrl;
 
     try {
-      profileUrl = await storage.uploadImage(_profilePic!, 'profile_pic');
-      dniFrontUrl = await storage.uploadImage(_dniFront!, 'dni_front');
-      dniBackUrl = await storage.uploadImage(_dniBack!, 'dni_back');
-      licenseUrl = await storage.uploadImage(_licenseDoc!, 'license');
-      soatUrl = await storage.uploadImage(_soatDoc!, 'soat');
-      propertyUrl = await storage.uploadImage(_propertyDoc!, 'property_card');
+      if (_profilePic != null) {
+        profileUrl = await storage.uploadImage(_profilePic!, 'profile_pic');
+      }
+      if (_dniFront != null) {
+        dniFrontUrl = await storage.uploadImage(_dniFront!, 'dni_front');
+      }
+      if (_dniBack != null) {
+        dniBackUrl = await storage.uploadImage(_dniBack!, 'dni_back');
+      }
+      if (_licenseDoc != null) {
+        licenseUrl = await storage.uploadImage(_licenseDoc!, 'license');
+      }
+      if (_soatDoc != null) {
+        soatUrl = await storage.uploadImage(_soatDoc!, 'soat');
+      }
+      if (_propertyDoc != null) {
+        propertyUrl = await storage.uploadImage(_propertyDoc!, 'property_card');
+      }
     } catch (e, st) {
       developer.log(
         'BecomeDriver _finalize: fallo al subir documentos para revisión: $e',
@@ -217,6 +262,17 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
       licenseUrl: licenseUrl,
       soatUrl: soatUrl,
       propertyCardUrl: propertyUrl,
+      dniFrontStatus:
+          _dniFront != null ? DocumentReviewStatus.pending.value : baseModel.dniFrontStatus,
+      dniBackStatus: _dniBack != null
+          ? DocumentReviewStatus.pending.value
+          : baseModel.dniBackStatus,
+      licenseStatus:
+          _licenseDoc != null ? DocumentReviewStatus.pending.value : baseModel.licenseStatus,
+      soatStatus: _soatDoc != null ? DocumentReviewStatus.pending.value : baseModel.soatStatus,
+      propertyCardStatus: _propertyDoc != null
+          ? DocumentReviewStatus.pending.value
+          : baseModel.propertyCardStatus,
     );
 
     if (!mounted) return;
@@ -257,6 +313,54 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
+      ),
+    );
+  }
+
+  DocumentReviewStatus _statusFromRaw(String raw) {
+    return DocumentReviewStatus.fromRaw(raw);
+  }
+
+  bool _canEditDocument(DocumentReviewStatus status) {
+    return status != DocumentReviewStatus.approved;
+  }
+
+  void _showApprovedBlockedMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Este documento ya fue aprobado y no se puede editar.',
+        ),
+        backgroundColor: AppTheme.darkSurface,
+      ),
+    );
+  }
+
+  Future<void> _openPickerForDocument(String docKey) async {
+    switch (docKey) {
+      case _docDniFront:
+        await _pickDocumentImage((f) => _dniFront = f);
+        break;
+      case _docDniBack:
+        await _pickDocumentImage((f) => _dniBack = f);
+        break;
+      case _docLicense:
+        await _pickDocumentImage((f) => _licenseDoc = f);
+        break;
+      case _docSoat:
+        await _pickDocumentImage((f) => _soatDoc = f);
+        break;
+      case _docPropertyCard:
+        await _pickDocumentImage((f) => _propertyDoc = f);
+        break;
+      default:
+        return;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Sube la nueva foto del documento rechazado.'),
+        backgroundColor: AppTheme.primaryBlue,
       ),
     );
   }
@@ -532,43 +636,128 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      DocumentPickerWidget(
-                        label: 'Foto de perfil',
-                        file: _profilePic,
-                        onFileChanged: (f) =>
-                            setState(() => _profilePic = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final profileStatus = DocumentReviewStatus.pending;
+                          final profileEditable = true;
+                          return DocumentPickerWidget(
+                            label: 'Foto de perfil',
+                            file: _profilePic,
+                            remoteImageUrl: user?.profilePicUrl,
+                            status: profileStatus,
+                            showStatus: false,
+                            isEditable: profileEditable,
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _profilePic = f),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
-                      DocumentPickerWidget(
-                        label: 'DNI frontal',
-                        file: _dniFront,
-                        onFileChanged: (f) => setState(() => _dniFront = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final status = _statusFromRaw(
+                            user?.dniFrontStatus ??
+                                DocumentReviewStatus.pending.value,
+                          );
+                          return DocumentPickerWidget(
+                            label: 'DNI frontal',
+                            file: _dniFront,
+                            remoteImageUrl: user?.dniFrontUrl,
+                            status: status,
+                            isEditable: _canEditDocument(status),
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _dniFront = f),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
-                      DocumentPickerWidget(
-                        label: 'DNI posterior',
-                        file: _dniBack,
-                        onFileChanged: (f) => setState(() => _dniBack = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final status = _statusFromRaw(
+                            user?.dniBackStatus ??
+                                DocumentReviewStatus.pending.value,
+                          );
+                          return DocumentPickerWidget(
+                            label: 'DNI posterior',
+                            file: _dniBack,
+                            remoteImageUrl: user?.dniBackUrl,
+                            status: status,
+                            isEditable: _canEditDocument(status),
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _dniBack = f),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
-                      DocumentPickerWidget(
-                        label: 'Licencia de conducir',
-                        file: _licenseDoc,
-                        onFileChanged: (f) =>
-                            setState(() => _licenseDoc = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final status = _statusFromRaw(
+                            user?.licenseStatus ??
+                                DocumentReviewStatus.pending.value,
+                          );
+                          return DocumentPickerWidget(
+                            label: 'Licencia de conducir',
+                            file: _licenseDoc,
+                            remoteImageUrl: user?.licenseUrl,
+                            status: status,
+                            isEditable: _canEditDocument(status),
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _licenseDoc = f),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
-                      DocumentPickerWidget(
-                        label: 'SOAT',
-                        file: _soatDoc,
-                        onFileChanged: (f) => setState(() => _soatDoc = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final status = _statusFromRaw(
+                            user?.soatStatus ?? DocumentReviewStatus.pending.value,
+                          );
+                          return DocumentPickerWidget(
+                            label: 'SOAT',
+                            file: _soatDoc,
+                            remoteImageUrl: user?.soatUrl,
+                            status: status,
+                            isEditable: _canEditDocument(status),
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _soatDoc = f),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
-                      DocumentPickerWidget(
-                        label: 'Tarjeta de propiedad',
-                        file: _propertyDoc,
-                        onFileChanged: (f) =>
-                            setState(() => _propertyDoc = f),
+                      Builder(
+                        builder: (context) {
+                          final authState = context.watch<AuthBloc>().state;
+                          final user =
+                              authState is AuthAuthenticated ? authState.user : null;
+                          final status = _statusFromRaw(
+                            user?.propertyCardStatus ??
+                                DocumentReviewStatus.pending.value,
+                          );
+                          return DocumentPickerWidget(
+                            label: 'Tarjeta de propiedad',
+                            file: _propertyDoc,
+                            remoteImageUrl: user?.propertyCardUrl,
+                            status: status,
+                            isEditable: _canEditDocument(status),
+                            onBlockedTap: _showApprovedBlockedMessage,
+                            onFileChanged: (f) => setState(() => _propertyDoc = f),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -630,6 +819,11 @@ class _BecomeDriverScreenState extends State<BecomeDriverScreen> {
       soatUrl: u.soatUrl,
       propertyCardUrl: u.propertyCardUrl,
       profilePicUrl: u.profilePicUrl,
+      dniFrontStatus: u.dniFrontStatus,
+      dniBackStatus: u.dniBackStatus,
+      licenseStatus: u.licenseStatus,
+      soatStatus: u.soatStatus,
+      propertyCardStatus: u.propertyCardStatus,
     );
   }
 

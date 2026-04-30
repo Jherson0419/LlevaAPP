@@ -7,6 +7,7 @@ import '../../../core/services/storage_service.dart';
 import '../../../core/utils/age_validation.dart';
 import '../../../core/utils/pending_driver_documents.dart';
 import '../../../data/models/user_model.dart';
+import '../../../domain/entities/document_review_status.dart';
 import '../../../domain/repositories/user_repository.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -394,6 +395,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         soatUrl: isDriver ? soatUrl : null,
         propertyCardUrl: isDriver ? propertyCardUrl : null,
         profilePicUrl: isDriver ? profilePicUrl : null,
+        dniFrontStatus: DocumentReviewStatus.pending.value,
+        dniBackStatus: DocumentReviewStatus.pending.value,
+        licenseStatus: DocumentReviewStatus.pending.value,
+        soatStatus: DocumentReviewStatus.pending.value,
+        propertyCardStatus: DocumentReviewStatus.pending.value,
       );
 
       final created = await _userRepository.createUserProfile(user);
