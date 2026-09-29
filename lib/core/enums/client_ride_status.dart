@@ -2,6 +2,7 @@
 enum ClientRideStatus {
   initial,
   readyToRequest,
+  requesting,
   searchingDriver,
   negotiating,
   driverAssigned,

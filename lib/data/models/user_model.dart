@@ -40,6 +40,7 @@ class UserModel extends UserEntity {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    final docs = _extractDocumentPayload(json);
     return UserModel(
       id: json['id'] as String,
       phone: json['phone'] as String,
@@ -63,18 +64,86 @@ class UserModel extends UserEntity {
       licenseCategory: json['license_category']?.toString(),
       licenseNumber: json['license_number']?.toString(),
       birthDate: _parseNullableDateTime(json['birth_date']),
-      dniFrontUrl: json['dni_front_url']?.toString(),
-      dniBackUrl: json['dni_back_url']?.toString(),
-      licenseUrl: json['license_url']?.toString(),
-      soatUrl: json['soat_url']?.toString(),
-      propertyCardUrl: json['property_card_url']?.toString(),
+      dniFrontUrl: _firstNonEmptyString([
+        docs['dni_front_url'],
+        docs['dniFrontUrl'],
+        json['dni_front_url'],
+        json['dniFrontUrl'],
+      ]),
+      dniBackUrl: _firstNonEmptyString([
+        docs['dni_back_url'],
+        docs['dniBackUrl'],
+        json['dni_back_url'],
+        json['dniBackUrl'],
+      ]),
+      licenseUrl: _firstNonEmptyString([
+        docs['license_url'],
+        docs['licenseUrl'],
+        json['license_url'],
+        json['licenseUrl'],
+      ]),
+      soatUrl: _firstNonEmptyString([
+        docs['soat_url'],
+        docs['soatUrl'],
+        json['soat_url'],
+        json['soatUrl'],
+      ]),
+      propertyCardUrl: _firstNonEmptyString([
+        docs['property_card_url'],
+        docs['propertyCardUrl'],
+        json['property_card_url'],
+        json['propertyCardUrl'],
+      ]),
       profilePicUrl: json['profile_pic_url']?.toString(),
-      dniFrontStatus: _parseStatus(json['dni_front_status']),
-      dniBackStatus: _parseStatus(json['dni_back_status']),
-      licenseStatus: _parseStatus(json['license_status']),
-      soatStatus: _parseStatus(json['soat_status']),
-      propertyCardStatus: _parseStatus(json['property_card_status']),
+      dniFrontStatus: _parseStatus(_firstNonEmptyString([
+        docs['dni_front_status'],
+        docs['dniFrontStatus'],
+        json['dni_front_status'],
+        json['dniFrontStatus'],
+      ])),
+      dniBackStatus: _parseStatus(_firstNonEmptyString([
+        docs['dni_back_status'],
+        docs['dniBackStatus'],
+        json['dni_back_status'],
+        json['dniBackStatus'],
+      ])),
+      licenseStatus: _parseStatus(_firstNonEmptyString([
+        docs['license_status'],
+        docs['licenseStatus'],
+        json['license_status'],
+        json['licenseStatus'],
+      ])),
+      soatStatus: _parseStatus(_firstNonEmptyString([
+        docs['soat_status'],
+        docs['soatStatus'],
+        json['soat_status'],
+        json['soatStatus'],
+      ])),
+      propertyCardStatus: _parseStatus(_firstNonEmptyString([
+        docs['property_card_status'],
+        docs['propertyCardStatus'],
+        json['property_card_status'],
+        json['propertyCardStatus'],
+      ])),
     );
+  }
+
+  static Map<String, dynamic> _extractDocumentPayload(Map<String, dynamic> json) {
+    final raw = json['driver_documents'] ?? json['driverDocuments'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return const {};
+  }
+
+  static String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
   }
 
   static String _parseStatus(dynamic value) {

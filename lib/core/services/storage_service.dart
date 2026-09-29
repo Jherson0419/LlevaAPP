@@ -86,7 +86,16 @@ class StorageService {
     }
   }
 
-  /// Sube [imageFile] a `profiles/{uid}/[fileName]` y devuelve la URL pública.
+  /// Sube [imageFile] a `profiles/{uid}/[fileName]` y devuelve la **ruta de Storage**
+  /// (p. ej. `profiles/<uid>/dni_front.jpg`), NO una URL.
+  ///
+  /// Antes devolvía `getPublicUrl()` y esa URL se guardaba tal cual en `profiles`
+  /// (dni_front_url, license_url, etc.). El bucket `driver-documents` ya no es
+  /// público (ver supabase/migrations/003_fix_storage_policies.sql) — esos
+  /// documentos son identidad (DNI/licencia/SOAT) y no deben quedar accesibles
+  /// por URL directa sin expiración. Para mostrarlos hay que pedir una signed URL
+  /// a demanda con [getSignedUrl]; quien llame a este método es responsable de
+  /// persistir el path devuelto, no una URL materializada.
   ///
   /// [fileName] debe incluir extensión (p. ej. `dni_front.jpg`). Si no la tiene,
   /// se toma la extensión del archivo local.
@@ -134,12 +143,14 @@ class StorageService {
             ),
           );
 
-      final url = _client.storage.from(bucket).getPublicUrl(storagePath);
       developer.log(
         'uploadImage ok path=$storagePath',
         name: 'StorageService',
       );
-      return url;
+      // Antes: getPublicUrl(storagePath). El bucket ya no es público
+      // (003_fix_storage_policies.sql) — se devuelve el path para persistirlo,
+      // y quien necesite mostrar la imagen debe pedir getSignedUrl(path).
+      return storagePath;
     } catch (e, st) {
       developer.log(
         'uploadImage falló fileName=$fileName localPath=$localPath '
@@ -165,6 +176,40 @@ class StorageService {
         }
       }
       rethrow;
+    }
+  }
+
+  /// Genera una URL temporal para mostrar un documento privado.
+  ///
+  /// [storagePath] es el valor devuelto por [uploadImage] (p. ej.
+  /// `profiles/<uid>/dni_front.jpg`), tal como se persiste en `profiles.*_url`.
+  /// Si [storagePath] ya es una URL absoluta (legado: filas creadas antes de
+  /// privatizar el bucket, o `profile_pic_url` que sigue siendo público a
+  /// propósito), se devuelve igual sin pedir nada a Storage.
+  ///
+  /// Expira en [expiresIn] (15 min por defecto) — pedir una nueva cada vez que
+  /// se vaya a pintar la imagen, no cachear el resultado más allá de esa ventana.
+  Future<String?> getSignedUrl(
+    String? storagePath, {
+    Duration expiresIn = const Duration(minutes: 15),
+  }) async {
+    if (storagePath == null || storagePath.trim().isEmpty) return null;
+    final path = storagePath.trim();
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    try {
+      return await _client.storage
+          .from(bucket)
+          .createSignedUrl(path, expiresIn.inSeconds);
+    } catch (e, st) {
+      developer.log(
+        'getSignedUrl falló path=$path: $e',
+        name: 'StorageService',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
     }
   }
 }

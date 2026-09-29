@@ -1,3 +1,6 @@
+# Secretos locales (ver .env.example / docs/setup_env.md) — NUNCA commitear
+.env
+
 # Miscellaneous
 *.class
 *.log

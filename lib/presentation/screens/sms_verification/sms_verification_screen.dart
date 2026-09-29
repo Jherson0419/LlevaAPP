@@ -82,6 +82,14 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
         });
       }
     });
+    // Antes esta pantalla asumía que el SMS "ya estaba enviado" y solo
+    // simulaba una espera de 2s antes de loguear por teléfono sin validar
+    // ningún código. Ahora el envío es real (Supabase Phone Auth) y se
+    // dispara al entrar a la pantalla.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthBloc>().add(SendOtpRequested(widget.phoneNumber));
+    });
   }
 
   @override
@@ -142,26 +150,17 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
       _isVerifying = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      setState(() {
-        _isVerifying = false;
-      });
-
-      context.read<AuthBloc>().add(VerifyPhoneNumber(widget.phoneNumber));
-    }
+    // El AuthBloc llama a Supabase Auth (verifyOTP) de verdad; _isVerifying se
+    // apaga en el listener cuando llega el estado terminal (autenticado,
+    // necesita registro, o error con código incorrecto/expirado).
+    context.read<AuthBloc>().add(
+          OtpVerified(phone: widget.phoneNumber, code: code),
+        );
   }
 
   void _handleResend() {
     if (_remainingSeconds == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Código reenviado'),
-          backgroundColor: AppTheme.successGreen,
-        ),
-      );
-      _startResendTimer();
+      context.read<AuthBloc>().add(SendOtpRequested(widget.phoneNumber));
     }
   }
 
@@ -212,7 +211,21 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
+        if (state is AuthOtpSent) {
+          // Cubre tanto el envío inicial (al entrar a la pantalla) como un
+          // reenvío manual; _startResendTimer cancela el timer previo, así
+          // que llamarlo de nuevo aquí es seguro.
+          _startResendTimer();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Código enviado por SMS'),
+              backgroundColor: AppTheme.successGreen,
+            ),
+          );
+          return;
+        }
         if (state is AuthNeedsRegistration) {
+          if (mounted) setState(() => _isVerifying = false);
           if (_isDriverFullPackage()) {
             context.push(
               '/register',
@@ -255,13 +268,17 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
           }
         }
         if (state is AuthAuthenticated) {
-          if (state.user.role == 'driver') {
-            context.go('/dashboard');
-          } else {
-            context.go('/client-dashboard');
-          }
+          if (mounted) setState(() => _isVerifying = false);
+          context.go(
+            '/welcome',
+            extra: {
+              'userName': state.user.fullName,
+              'isNewUser': false,
+            },
+          );
         }
         if (state is AuthError) {
+          if (mounted) setState(() => _isVerifying = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -305,6 +322,41 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                 ),
+                if (kDevMode) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warningOrange.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppTheme.warningOrange.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.bug_report_outlined,
+                          color: AppTheme.warningOrange,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Modo desarrollo: usa 000000',
+                          style: TextStyle(
+                            color: AppTheme.warningOrange,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const Spacer(flex: 2),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,

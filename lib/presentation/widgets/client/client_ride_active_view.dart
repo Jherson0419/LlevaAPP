@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -167,6 +169,10 @@ class ClientRideActiveView extends StatelessWidget {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
+                    developer.log(
+                      'ClientRideActiveView: Cancelar → add(CancelRide)',
+                      name: 'ClientUI',
+                    );
                     context.read<ClientRideBloc>().add(const CancelRide());
                   },
                   style: ElevatedButton.styleFrom(

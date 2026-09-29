@@ -12,6 +12,10 @@ class ClientRideState extends Equatable {
   final List<Prediction> originPredictions;
   final List<Prediction> destPredictions;
   final List<LatLng> routePolyline;
+  /// Distancia en km por ruta en auto (Google Directions), no línea recta.
+  final double? routeDistanceKm;
+  /// Duración estimada del trayecto en segundos (Google Directions).
+  final int? routeDurationSeconds;
   /// Tarifa calculada solo por distancia (antes de categoría y extras).
   final double? routeBaseSuggested;
   final ClientVehicleCategory vehicleCategory;
@@ -23,7 +27,10 @@ class ClientRideState extends Equatable {
   final double? suggestedPrice;
   final String? errorMessage;
   final RideEntity? activeRide;
+  final List<RideOfferEntity> pendingRideOffers;
   final String paymentMethod;
+  /// Conductores distintos que han respondido a esta solicitud (proxy de visualizaciones).
+  final int viewersCount;
 
   const ClientRideState({
     this.status = ClientRideStatus.initial,
@@ -34,6 +41,8 @@ class ClientRideState extends Equatable {
     this.originPredictions = const [],
     this.destPredictions = const [],
     this.routePolyline = const [],
+    this.routeDistanceKm,
+    this.routeDurationSeconds,
     this.routeBaseSuggested,
     this.vehicleCategory = ClientVehicleCategory.standard,
     this.moreThanFourPassengers = false,
@@ -44,7 +53,9 @@ class ClientRideState extends Equatable {
     this.suggestedPrice,
     this.errorMessage,
     this.activeRide,
+    this.pendingRideOffers = const [],
     this.paymentMethod = 'efectivo',
+    this.viewersCount = 0,
   });
 
   ClientRideState copyWith({
@@ -56,6 +67,8 @@ class ClientRideState extends Equatable {
     List<Prediction>? originPredictions,
     List<Prediction>? destPredictions,
     List<LatLng>? routePolyline,
+    Object? routeDistanceKm = _unset,
+    Object? routeDurationSeconds = _unset,
     double? routeBaseSuggested,
     ClientVehicleCategory? vehicleCategory,
     bool? moreThanFourPassengers,
@@ -66,7 +79,9 @@ class ClientRideState extends Equatable {
     double? suggestedPrice,
     String? errorMessage,
     Object? activeRide = _unset,
+    List<RideOfferEntity>? pendingRideOffers,
     String? paymentMethod,
+    int? viewersCount,
   }) {
     return ClientRideState(
       status: status ?? this.status,
@@ -77,6 +92,12 @@ class ClientRideState extends Equatable {
       originPredictions: originPredictions ?? this.originPredictions,
       destPredictions: destPredictions ?? this.destPredictions,
       routePolyline: routePolyline ?? this.routePolyline,
+      routeDistanceKm: routeDistanceKm == _unset
+          ? this.routeDistanceKm
+          : routeDistanceKm as double?,
+      routeDurationSeconds: routeDurationSeconds == _unset
+          ? this.routeDurationSeconds
+          : routeDurationSeconds as int?,
       routeBaseSuggested: routeBaseSuggested ?? this.routeBaseSuggested,
       vehicleCategory: vehicleCategory ?? this.vehicleCategory,
       moreThanFourPassengers:
@@ -90,7 +111,9 @@ class ClientRideState extends Equatable {
       activeRide: activeRide == _unset
           ? this.activeRide
           : activeRide as RideEntity?,
+      pendingRideOffers: pendingRideOffers ?? this.pendingRideOffers,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      viewersCount: viewersCount ?? this.viewersCount,
     );
   }
 
@@ -104,6 +127,8 @@ class ClientRideState extends Equatable {
         originPredictions,
         destPredictions,
         routePolyline,
+        routeDistanceKm,
+        routeDurationSeconds,
         routeBaseSuggested,
         vehicleCategory,
         moreThanFourPassengers,
@@ -114,7 +139,9 @@ class ClientRideState extends Equatable {
         suggestedPrice,
         errorMessage,
         activeRide,
+        pendingRideOffers,
         paymentMethod,
+        viewersCount,
       ];
 }
 

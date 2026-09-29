@@ -9,13 +9,43 @@ sealed class AuthEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class VerifyPhoneNumber extends AuthEvent {
+/// Pide a Supabase Auth que envíe (o reenvíe) el código SMS al número dado.
+///
+/// Reemplaza al antiguo `VerifyPhoneNumber`, que "autenticaba" solo con el
+/// número de teléfono sin verificar ningún código — cualquiera que conociera
+/// el teléfono de otra persona podía iniciar sesión como ella. Ver auditoría
+/// BLOQUE 1.3.
+class SendOtpRequested extends AuthEvent {
   final String phone;
 
-  const VerifyPhoneNumber(this.phone);
+  const SendOtpRequested(this.phone);
 
   @override
   List<Object?> get props => [phone];
+}
+
+/// El usuario ingresó el código de 6 dígitos recibido por SMS.
+class OtpVerified extends AuthEvent {
+  final String phone;
+  final String code;
+
+  const OtpVerified({required this.phone, required this.code});
+
+  @override
+  List<Object?> get props => [phone, code];
+}
+
+/// Evento interno: signInWithOtp/verifyOTP fallaron (código inválido/expirado,
+/// proveedor SMS no configurado, etc.). Separado de AuthError como evento (no
+/// solo estado) para que el flujo de envío/verificación sea testeable de punta
+/// a punta vía bloc_test sin mockear excepciones a mitad de un handler.
+class OtpFailed extends AuthEvent {
+  final String message;
+
+  const OtpFailed(this.message);
+
+  @override
+  List<Object?> get props => [message];
 }
 
 class RegisterUser extends AuthEvent {
@@ -112,6 +142,12 @@ class RegisterUser extends AuthEvent {
         propertyCardLocalPath,
         profilePicLocalPath,
       ];
+}
+
+/// Inicia sesión con Google (One Tap / selector de cuentas nativo) — ver
+/// AuthBloc._onGoogleSignIn.
+class GoogleSignInRequested extends AuthEvent {
+  const GoogleSignInRequested();
 }
 
 class CheckAuthStatus extends AuthEvent {

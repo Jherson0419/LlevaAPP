@@ -21,20 +21,47 @@ class DriverOnline extends DriverStatusState {
   List<Object?> get props => [availableRides];
 }
 
+/// Estado online con aviso de solicitud expirada al aceptar.
+class DriverRequestExpired extends DriverOnline {
+  final String message;
+
+  const DriverRequestExpired({
+    required super.availableRides,
+    this.message = 'Esta solicitud ha expirado y ya no está disponible',
+  });
+
+  @override
+  List<Object?> get props => [availableRides, message];
+}
+
+/// Conductor revisa la solicitud (precio, ruta) antes de enviar oferta.
 class DriverNegotiating extends DriverStatusState {
   final RideEntity activeRide;
   final double currentOffer;
-  /// Tras enviar una contraoferta: esperando decisión del pasajero.
-  final bool awaitingPassengerResponse;
 
   const DriverNegotiating({
     required this.activeRide,
     required this.currentOffer,
-    this.awaitingPassengerResponse = false,
   });
 
   @override
-  List<Object?> get props => [activeRide, currentOffer, awaitingPassengerResponse];
+  List<Object?> get props => [activeRide, currentOffer];
+}
+
+/// Oferta enviada a `ride_offers`; el viaje sigue en `searching` hasta que el pasajero elija.
+class DriverWaitingForPassengerDecision extends DriverStatusState {
+  final RideEntity activeRide;
+  final String submittedOfferId;
+  final double submittedPrice;
+
+  const DriverWaitingForPassengerDecision({
+    required this.activeRide,
+    required this.submittedOfferId,
+    required this.submittedPrice,
+  });
+
+  @override
+  List<Object?> get props => [activeRide, submittedOfferId, submittedPrice];
 }
 
 class DriverOnTrip extends DriverStatusState {

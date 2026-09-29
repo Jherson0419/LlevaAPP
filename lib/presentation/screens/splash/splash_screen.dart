@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_state.dart';
@@ -25,7 +27,7 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     return BlocListener<AuthBloc, AuthState>(
-      listener: (context, state) {
+      listener: (context, state) async {
         if (state is AuthAuthenticated) {
           final mode = context.read<PassengerDriverModeCubit>().state;
           if (shouldUseDriverHome(state.user, mode)) {
@@ -33,7 +35,13 @@ class _SplashScreenState extends State<SplashScreen> {
           } else {
             context.go('/client-dashboard');
           }
-        } else if (state is AuthInitial || state is AuthError) {
+        } else if (state is AuthInitial) {
+          final prefs = await SharedPreferences.getInstance();
+          final onboardingComplete =
+              prefs.getBool(AppConstants.onboardingCompleteKey) ?? false;
+          if (!context.mounted) return;
+          context.go(onboardingComplete ? '/login' : '/onboarding/welcome');
+        } else if (state is AuthError) {
           context.go('/login');
         }
       },
@@ -86,12 +94,12 @@ class LlevaLogoPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     final path = Path();
-    
+
     // Dibujar la L
     path.moveTo(size.width * 0.2, size.height * 0.2);
     path.lineTo(size.width * 0.2, size.height * 0.8);
     path.lineTo(size.width * 0.6, size.height * 0.8);
-    
+
     // Flecha que fluye desde la L
     path.moveTo(size.width * 0.6, size.height * 0.8);
     path.lineTo(size.width * 0.8, size.height * 0.6);
@@ -99,16 +107,16 @@ class LlevaLogoPainter extends CustomPainter {
     path.lineTo(size.width * 0.75, size.height * 0.55);
     path.moveTo(size.width * 0.8, size.height * 0.6);
     path.lineTo(size.width * 0.75, size.height * 0.65);
-    
+
     canvas.drawPath(path, paint);
-    
+
     // Efecto de brillo
     final glowPaint = Paint()
       ..color = AppTheme.primaryBlue.withOpacity(0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 12
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    
+
     canvas.drawPath(path, glowPaint);
   }
 

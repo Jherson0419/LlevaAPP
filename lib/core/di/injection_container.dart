@@ -9,6 +9,7 @@ import '../../domain/repositories/ride_repository.dart';
 import '../../domain/repositories/user_repository.dart';
 import '../../presentation/bloc/auth/auth_bloc.dart';
 import '../../presentation/cubit/passenger_driver_mode_cubit.dart';
+import '../../presentation/cubit/theme_cubit.dart';
 import '../../presentation/bloc/client_ride/client_ride_bloc.dart';
 import '../../presentation/bloc/driver_stats/driver_stats_cubit.dart';
 import '../../presentation/bloc/driver_status/driver_status_bloc.dart';
@@ -36,12 +37,14 @@ Future<void> initDI() async {
   sl.registerLazySingleton<PassengerDriverModeCubit>(
     PassengerDriverModeCubit.new,
   );
+  sl.registerLazySingleton<ThemeCubit>(() => ThemeCubit());
 
   // BLoCs
   sl.registerFactory<AuthBloc>(
     () => AuthBloc(
       userRepository: sl(),
       storageService: sl(),
+      supabaseClient: sl(),
     ),
   );
   sl.registerFactory<DriverStatusBloc>(

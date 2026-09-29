@@ -129,8 +129,9 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.of(context);
     return Scaffold(
-      backgroundColor: AppTheme.darkBackground,
+      backgroundColor: colors.background,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -168,13 +169,13 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
                   ],
-                  style: const TextStyle(color: AppTheme.darkText),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Teléfono',
                     labelStyle:
-                        const TextStyle(color: AppTheme.darkTextSecondary),
+                        TextStyle(color: colors.textSecondary),
                     filled: true,
-                    fillColor: AppTheme.darkSurface,
+                    fillColor: colors.surface,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -195,7 +196,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                             width: 1,
                             height: 24,
                             margin: const EdgeInsets.only(left: 12),
-                            color: AppTheme.darkTextSecondary
+                            color: colors.textSecondary
                                 .withValues(alpha: 0.3),
                           ),
                         ],
@@ -214,7 +215,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                 TextFormField(
                   controller: _firstNameController,
                   textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(color: AppTheme.darkText),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration: _fieldDeco('Nombre', Icons.person_outline),
                   validator: (v) {
                     if (v == null || v.trim().length < 2) {
@@ -227,7 +228,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                 TextFormField(
                   controller: _lastNameController,
                   textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(color: AppTheme.darkText),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration: _fieldDeco('Apellidos', Icons.person_outline),
                   validator: (v) {
                     if (v == null || v.trim().length < 2) {
@@ -244,7 +245,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(8),
                   ],
-                  style: const TextStyle(color: AppTheme.darkText),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration: _fieldDeco('DNI', Icons.badge_outlined),
                   validator: (v) {
                     final s = v?.trim() ?? '';
@@ -257,7 +258,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: AppTheme.darkText),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration:
                       _fieldDeco('Correo electrónico', Icons.email_outlined),
                   validator: (v) {
@@ -286,8 +287,8 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
                             : 'Toca para seleccionar (mayor de 18 años)',
                         style: TextStyle(
                           color: _birthDate != null
-                              ? AppTheme.darkText
-                              : AppTheme.darkTextSecondary,
+                              ? colors.textPrimary
+                              : colors.textSecondary,
                           fontSize: 16,
                         ),
                       ),
@@ -397,12 +398,13 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen> {
   }
 
   InputDecoration _fieldDeco(String label, IconData icon) {
+    final colors = AppTheme.of(context);
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: AppTheme.darkTextSecondary),
+      labelStyle: TextStyle(color: colors.textSecondary),
       prefixIcon: Icon(icon, color: AppTheme.primaryBlue),
       filled: true,
-      fillColor: AppTheme.darkSurface,
+      fillColor: colors.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,

@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/passenger_name_helper.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/location_helper.dart';
 import '../../../domain/entities/ride_entity.dart';
@@ -12,17 +13,20 @@ import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_state.dart';
 import '../../bloc/driver_status/driver_status_bloc.dart';
 import '../../bloc/driver_status/driver_status_event.dart';
-import '../../bloc/driver_status/driver_status_state.dart';
 
 /// Tarjeta de negociación: modo inmersivo, dos columnas + panel de acciones.
 class DriverNegotiatingCard extends StatelessWidget {
-  final DriverNegotiating state;
+  final RideEntity activeRide;
+  final double currentOffer;
+  final bool isWaitingOnPassenger;
   /// Distancia conductor → recojo (km), si hay GPS.
   final double? distanceToPickupKm;
 
   const DriverNegotiatingCard({
     super.key,
-    required this.state,
+    required this.activeRide,
+    required this.currentOffer,
+    this.isWaitingOnPassenger = false,
     this.distanceToPickupKm,
   });
 
@@ -33,21 +37,17 @@ class DriverNegotiatingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ride = state.activeRide;
+    final ride = activeRide;
     final isYape = ride.paymentMethod.toLowerCase() == 'yape';
-    final passengerLabel = ride.clientId.length >= 5
-        ? ride.clientId.substring(0, 5)
-        : (ride.clientId.isEmpty ? 'Pasajero' : ride.clientId);
 
     final distanceText = distanceToPickupKm != null
         ? 'A ${distanceToPickupKm!.toStringAsFixed(1)} km de ti'
         : 'Calculando distancia…';
 
-    if (state.awaitingPassengerResponse) {
+    if (isWaitingOnPassenger) {
       return _buildAwaitingPassengerPanel(
         context,
         ride,
-        passengerLabel,
         isYape,
         distanceText,
       );
@@ -88,63 +88,13 @@ class DriverNegotiatingCard extends StatelessWidget {
                   children: [
                     SizedBox(
                       width: 72,
-                      child: Column(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _priceCyan,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: const CircleAvatar(
-                              radius: 22,
-                              backgroundColor: AppTheme.darkSurfaceElevated,
-                              child: Icon(
-                                Icons.person,
-                                color: AppTheme.darkTextSecondary,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            passengerLabel,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.darkText,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(Icons.star, color: Colors.amber, size: 12),
-                              SizedBox(width: 2),
-                              Text(
-                                '4.9',
-                                style: TextStyle(
-                                  color: AppTheme.darkText,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            '(120 viajes)',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                        ],
+                      child: _passengerProfileColumn(
+                        ride,
+                        avatarRadius: 22,
+                        nameFontSize: 11,
+                        ratingFontSize: 12,
+                        tripsFontSize: 10,
+                        showRequestAge: true,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -162,7 +112,7 @@ class DriverNegotiatingCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '${AppConstants.currencySymbol} ${ride.offeredPrice.toStringAsFixed(2)}',
+                            '${AppConstants.currencySymbol} ${currentOffer.toStringAsFixed(2)}',
                             style: const TextStyle(
                               color: _priceCyan,
                               fontSize: 26,
@@ -203,6 +153,108 @@ class DriverNegotiatingCard extends StatelessWidget {
     );
   }
 
+  Widget _passengerProfileColumn(
+    RideEntity ride, {
+    required double avatarRadius,
+    required double nameFontSize,
+    required double ratingFontSize,
+    required double tripsFontSize,
+    bool showRequestAge = false,
+  }) {
+    final first =
+        passengerFirstNameFromFullName(ride.clientFirstName.trim());
+    final name = first.isEmpty ? 'Pasajero' : first;
+    final rating = ride.clientPassengerRating;
+    final ratingText =
+        rating != null ? rating.toStringAsFixed(1) : '—';
+    final pic = ride.clientProfilePicUrl?.trim();
+
+    final double dim = avatarRadius * 2;
+    Widget placeholder() => Container(
+          width: dim,
+          height: dim,
+          color: AppTheme.darkSurfaceElevated,
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.person,
+            size: avatarRadius,
+            color: AppTheme.darkTextSecondary,
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: _priceCyan, width: 1.5),
+          ),
+          child: ClipOval(
+            child: pic != null && pic.isNotEmpty
+                ? Image.network(
+                    pic,
+                    width: dim,
+                    height: dim,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => placeholder(),
+                  )
+                : placeholder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          name,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: AppTheme.darkText,
+            fontSize: nameFontSize,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star, color: Colors.amber, size: ratingFontSize + 1),
+            SizedBox(width: ratingFontSize >= 13 ? 4 : 2),
+            Text(
+              ratingText,
+              style: TextStyle(
+                color: AppTheme.darkText,
+                fontSize: ratingFontSize,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          '${ride.clientCompletedTrips} viajes',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: tripsFontSize,
+            color: Colors.grey.shade500,
+          ),
+        ),
+        if (showRequestAge) ...[
+          const SizedBox(height: 4),
+          Text(
+            _requestAgeLabel(ride.createdAt),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: tripsFontSize,
+              color: Colors.grey.shade400,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   String _requestAgeLabel(DateTime createdAt) {
     final minutes = DateTime.now().difference(createdAt).inMinutes;
     if (minutes <= 0) return 'Hace un momento';
@@ -210,11 +262,10 @@ class DriverNegotiatingCard extends StatelessWidget {
     return 'Hace $minutes min';
   }
 
-  /// Modal inferior en espera de respuesta (mensaje va en el dashboard).
+  /// Panel inferior mientras el pasajero decide (mensaje también en overlay del mapa).
   Widget _buildAwaitingPassengerPanel(
     BuildContext context,
     RideEntity ride,
-    String passengerLabel,
     bool isYape,
     String distanceText,
   ) {
@@ -259,54 +310,12 @@ class DriverNegotiatingCard extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                CircleAvatar(
-                                  radius: 26,
-                                  backgroundColor: AppTheme.darkSurfaceElevated,
-                                  child: Icon(
-                                    Icons.person,
-                                    size: 30,
-                                    color: Colors.grey.shade400,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  passengerLabel,
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppTheme.darkText,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(
-                                      Icons.star,
-                                      color: Colors.amber,
-                                      size: 14,
-                                    ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      '4.9',
-                                      style: TextStyle(
-                                        color: AppTheme.darkText,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  '(120 viajes)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade500,
-                                  ),
+                                _passengerProfileColumn(
+                                  ride,
+                                  avatarRadius: 26,
+                                  nameFontSize: 12,
+                                  ratingFontSize: 13,
+                                  tripsFontSize: 10,
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
@@ -335,18 +344,31 @@ class DriverNegotiatingCard extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  '${AppConstants.currencySymbol} ${state.currentOffer.toStringAsFixed(2)}',
+                                  'Se está ofreciendo tu tarifa al cliente. Esperando su respuesta…',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade300,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'La barra muestra el tiempo aproximado antes de retirar la oferta automáticamente.',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 11,
+                                    height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  '${AppConstants.currencySymbol} ${currentOffer.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     color: _priceCyan,
                                     fontSize: 28,
                                     fontWeight: FontWeight.bold,
                                   ),
-                                ),
-                                const SizedBox(height: 10),
-                                _routeRow(
-                                  Icons.trip_origin,
-                                  Colors.greenAccent,
-                                  ride.originName,
                                 ),
                                 const SizedBox(height: 6),
                                 RideDestinationDisplay(rawDestName: ride.destName),
@@ -363,7 +385,7 @@ class DriverNegotiatingCard extends StatelessWidget {
               ),
               TweenAnimationBuilder<double>(
                 key: ValueKey<String>(
-                  'offer_timer_${ride.id}_${state.currentOffer}',
+                  'offer_timer_${ride.id}_$currentOffer',
                 ),
                 duration: const Duration(seconds: 10),
                 tween: Tween(begin: 1.0, end: 0.0),
@@ -466,8 +488,7 @@ class DriverNegotiatingCard extends StatelessWidget {
   }
 
   Widget _buildActions(BuildContext context) {
-    final ride = state.activeRide;
-    final offered = ride.offeredPrice;
+    final offered = currentOffer;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -534,7 +555,7 @@ class DriverNegotiatingCard extends StatelessWidget {
 
   Widget _quickOfferButton(BuildContext context, double delta) {
     return OutlinedButton(
-      onPressed: () => _sendCounter(context, state.currentOffer + delta),
+      onPressed: () => _sendCounter(context, currentOffer + delta),
       style: OutlinedButton.styleFrom(
         foregroundColor: _priceCyan,
         side: const BorderSide(color: _priceCyan, width: 1.5),
@@ -563,9 +584,8 @@ class DriverNegotiatingCard extends StatelessWidget {
     }
     context.read<DriverStatusBloc>().add(
           AcceptRide(
-            ride: state.activeRide,
+            ride: activeRide,
             driverId: authState.user.id,
-            finalPrice: state.activeRide.offeredPrice,
           ),
         );
   }
@@ -583,7 +603,7 @@ class DriverNegotiatingCard extends StatelessWidget {
     }
     context.read<DriverStatusBloc>().add(
           CounterOfferRide(
-            ride: state.activeRide,
+            ride: activeRide,
             driverId: authState.user.id,
             newPrice: newPrice,
           ),

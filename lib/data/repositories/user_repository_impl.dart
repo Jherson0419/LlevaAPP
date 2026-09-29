@@ -28,6 +28,68 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
+  Future<UserEntity?> getUserById(String id) async {
+    if (id.trim().isEmpty) return null;
+    final response = await _supabaseClient
+        .from('profiles')
+        .select()
+        .eq('id', id.trim())
+        .maybeSingle();
+
+    if (response != null) {
+      return UserModel.fromJson(response);
+    }
+    return null;
+  }
+
+  @override
+  Future<UserEntity?> migrateProfileId({
+    required String currentId,
+    required String newId,
+  }) async {
+    final from = currentId.trim();
+    final to = newId.trim();
+    if (from.isEmpty || to.isEmpty || from == to) return null;
+    try {
+      final response = await _supabaseClient
+          .from('profiles')
+          .update({'id': to})
+          .eq('id', from)
+          .select()
+          .maybeSingle();
+      if (response != null) {
+        return UserModel.fromJson(response);
+      }
+      developer.log(
+        'migrateProfileId: update sin fila devuelta (from=$from to=$to)',
+        name: 'UserRepositoryImpl',
+      );
+      return null;
+    } on PostgrestException catch (e, st) {
+      // Si rides.client_id/driver_id referencian profiles.id sin ON UPDATE
+      // CASCADE, este UPDATE puede fallar por violación de FK. Hay que
+      // resolverlo en el esquema real (ver docs/setup_phone_auth.md) — no se
+      // puede arreglar a ciegas desde aquí sin acceso a la BD en producción.
+      developer.log(
+        'migrateProfileId PostgrestException: ${e.message} (code=${e.code}) '
+        'from=$from to=$to — revisa FKs de rides.client_id/driver_id',
+        name: 'UserRepositoryImpl',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    } catch (e, st) {
+      developer.log(
+        'migrateProfileId error: $e from=$from to=$to',
+        name: 'UserRepositoryImpl',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    }
+  }
+
+  @override
   Future<UserEntity?> createUserProfile(UserEntity user) async {
     final model = user as UserModel;
     try {

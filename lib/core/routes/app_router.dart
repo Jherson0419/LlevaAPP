@@ -11,6 +11,11 @@ import '../../presentation/bloc/driver_stats/driver_stats_cubit.dart';
 import '../../presentation/bloc/driver_status/driver_status_bloc.dart';
 import '../../presentation/bloc/driver_wallet/driver_wallet_cubit.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
+import '../../presentation/screens/splash/welcome_splash_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_welcome_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_name_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_phone_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_code_screen.dart';
 import '../../presentation/screens/login/login_screen.dart';
 import '../../presentation/screens/register/driver_register_screen.dart';
 import '../../presentation/screens/register/client_register_screen.dart';
@@ -28,6 +33,7 @@ import '../../presentation/screens/client/client_help_screen.dart';
 import '../../presentation/screens/client/client_support_screen.dart';
 import '../../presentation/screens/history/ride_history_screen.dart';
 import '../../presentation/screens/driver/become_driver_screen.dart';
+import '../../presentation/screens/driver/driver_application_sent_screen.dart';
 import '../../presentation/screens/driver/driver_rejected_documents_screen.dart';
 import '../../presentation/screens/driver/driver_route_placeholder_screen.dart';
 import '../../presentation/screens/driver_profile/driver_profile_screen.dart';
@@ -58,7 +64,8 @@ class AppRouter {
         path == '/driver-register' ||
         path == '/client-register' ||
         path == '/register' ||
-        path.startsWith('/sms-verification');
+        path.startsWith('/sms-verification') ||
+        path.startsWith('/onboarding');
   }
 
   static bool _isDriverExclusivePath(String path) {
@@ -177,6 +184,64 @@ class AppRouter {
           builder: (context, state) => const LoginScreen(),
         ),
         GoRoute(
+          path: '/welcome',
+          name: 'welcome',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            final userName = map['userName']?.toString() ?? '';
+            final isNewUser = map['isNewUser'] == true;
+            return WelcomeSplashScreen(
+              userName: userName,
+              isNewUser: isNewUser,
+              onComplete: () {
+                final authState = context.read<AuthBloc>().state;
+                if (authState is AuthAuthenticated) {
+                  final mode = context.read<PassengerDriverModeCubit>().state;
+                  if (shouldUseDriverHome(authState.user, mode)) {
+                    context.go('/dashboard');
+                  } else {
+                    context.go('/client-dashboard');
+                  }
+                } else {
+                  context.go('/login');
+                }
+              },
+            );
+          },
+        ),
+        GoRoute(
+          path: '/onboarding/welcome',
+          name: 'onboarding-welcome',
+          builder: (context, state) => const OnboardingWelcomeScreen(),
+        ),
+        GoRoute(
+          path: '/onboarding/name',
+          name: 'onboarding-name',
+          builder: (context, state) => const OnboardingNameScreen(),
+        ),
+        GoRoute(
+          path: '/onboarding/phone',
+          name: 'onboarding-phone',
+          builder: (context, state) {
+            final extra = state.extra;
+            final name = extra is Map ? (extra['name']?.toString() ?? '') : '';
+            return OnboardingPhoneScreen(name: name);
+          },
+        ),
+        GoRoute(
+          path: '/onboarding/code',
+          name: 'onboarding-code',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingCodeScreen(
+              name: map['name']?.toString() ?? '',
+              phone: map['phone']?.toString() ?? '',
+            );
+          },
+        ),
+        GoRoute(
           path: '/driver-register',
           name: 'driver-register',
           builder: (context, state) => DriverRegisterScreen(
@@ -226,6 +291,7 @@ class AppRouter {
               final carYearRaw = extra['car_year']?.toString();
               return RegisterProfileScreen(
                 phone: phone,
+                prefilledName: extra['name']?.toString() ?? '',
                 prefilledRole: extra['role']?.toString(),
                 prefilledFirstName: extra['first_name']?.toString(),
                 prefilledLastName: extra['last_name']?.toString(),
@@ -312,6 +378,11 @@ class AppRouter {
           path: driverRejectedDocsPath,
           name: 'driver-rejected-documents',
           builder: (context, state) => const DriverRejectedDocumentsScreen(),
+        ),
+        GoRoute(
+          path: '/driver-application-sent',
+          name: 'driver-application-sent',
+          builder: (context, state) => const DriverApplicationSentScreen(),
         ),
         GoRoute(
           path: '/client-profile',

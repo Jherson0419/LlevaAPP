@@ -9,241 +9,7 @@ import '../../../bloc/auth/auth_bloc.dart';
 import '../../../bloc/auth/auth_state.dart';
 import '../../../bloc/client_ride/client_ride_bloc.dart';
 import '../client_payment_method_ui.dart';
-
-void _showRidePreferencesSheet(BuildContext context, ClientRideState state) {
-  final rideBloc = context.read<ClientRideBloc>();
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
-    builder: (sheetCtx) {
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(sheetCtx).bottom,
-        ),
-        child: _RidePreferencesSheetBody(
-          rideBloc: rideBloc,
-          initialComments: state.rideComments,
-        ),
-      );
-    },
-  );
-}
-
-WidgetStateProperty<Color> _ridePrefSwitchThumbColor() {
-  return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
-    if (states.contains(WidgetState.selected)) {
-      return Colors.black;
-    }
-    return const Color(0xFFBDBDBD);
-  });
-}
-
-class _RidePreferencesSheetBody extends StatefulWidget {
-  const _RidePreferencesSheetBody({
-    required this.rideBloc,
-    required this.initialComments,
-  });
-
-  final ClientRideBloc rideBloc;
-  final String initialComments;
-
-  @override
-  State<_RidePreferencesSheetBody> createState() =>
-      _RidePreferencesSheetBodyState();
-}
-
-class _RidePreferencesSheetBodyState extends State<_RidePreferencesSheetBody> {
-  late final TextEditingController _notesCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _notesCtrl = TextEditingController(text: widget.initialComments);
-  }
-
-  @override
-  void dispose() {
-    _notesCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppTheme.darkSurface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: BlocBuilder<ClientRideBloc, ClientRideState>(
-        bloc: widget.rideBloc,
-        builder: (context, st) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[700],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Text(
-                  'Preferencias del viaje',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'El conductor verá esta información al aceptar tu solicitud. '
-                  'La tarifa se ajusta un poco si activas ciertas opciones.',
-                  style: TextStyle(
-                    color: AppTheme.darkTextSecondary,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Más de 4 pasajeros',
-                    style: TextStyle(
-                      color: AppTheme.darkText,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'Somos un grupo grande y necesitamos más espacio.',
-                    style: TextStyle(
-                      color: AppTheme.darkTextSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  value: st.moreThanFourPassengers,
-                  activeTrackColor: AppTheme.primaryBlue,
-                  thumbColor: _ridePrefSwitchThumbColor(),
-                  onChanged: (v) => widget.rideBloc.add(
-                    RidePreferencesChanged(moreThanFourPassengers: v),
-                  ),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Silla de bebé',
-                    style: TextStyle(
-                      color: AppTheme.darkText,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'Necesito asiento infantil o base para bebé.',
-                    style: TextStyle(
-                      color: AppTheme.darkTextSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  value: st.babySeat,
-                  activeTrackColor: AppTheme.primaryBlue,
-                  thumbColor: _ridePrefSwitchThumbColor(),
-                  onChanged: (v) =>
-                      widget.rideBloc.add(RidePreferencesChanged(babySeat: v)),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Llevo una mascota',
-                    style: TextStyle(
-                      color: AppTheme.darkText,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'Viajo con un animal (indica detalles en comentarios).',
-                    style: TextStyle(
-                      color: AppTheme.darkTextSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  value: st.pet,
-                  activeTrackColor: AppTheme.primaryBlue,
-                  thumbColor: _ridePrefSwitchThumbColor(),
-                  onChanged: (v) =>
-                      widget.rideBloc.add(RidePreferencesChanged(pet: v)),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Comentarios',
-                  style: TextStyle(
-                    color: AppTheme.darkText,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _notesCtrl,
-                  maxLines: 4,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: const Color(0xFF141414),
-                    hintText:
-                        'Ej.: portón negro, referencia, tipo de mascota…',
-                    hintStyle: const TextStyle(
-                      color: AppTheme.darkTextSecondary,
-                      fontSize: 14,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.all(14),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                ElevatedButton(
-                  onPressed: () {
-                    widget.rideBloc.add(
-                      RidePreferencesChanged(
-                        rideComments: _notesCtrl.text,
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00D4FF),
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Listo',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
+import '../client_ride_preferences_sheet.dart';
 
 const Color _kRidePriceCyan = Color(0xFF00D4FF);
 
@@ -385,7 +151,10 @@ class RidePriceSection extends StatelessWidget {
                         final cur = state.offeredPrice > 0
                             ? state.offeredPrice
                             : (suggested ?? 5);
-                        final next = (cur - 0.5).clamp(1.0, 99999.0);
+                        final next = ClientRidePricing.decreaseOffered(
+                          current: cur,
+                          suggestedPrice: suggested,
+                        );
                         priceController.text = next.toStringAsFixed(2);
                         rideBloc.add(PriceChanged(next));
                       },
@@ -416,7 +185,7 @@ class RidePriceSection extends StatelessWidget {
                         final cur = state.offeredPrice > 0
                             ? state.offeredPrice
                             : (suggested ?? 5);
-                        final next = (cur + 0.5).clamp(1.0, 99999.0);
+                        final next = ClientRidePricing.increaseOffered(cur);
                         priceController.text = next.toStringAsFixed(2);
                         rideBloc.add(PriceChanged(next));
                       },
@@ -642,6 +411,7 @@ class ReadyToRequestBottomBar extends StatelessWidget {
     return BlocBuilder<ClientRideBloc, ClientRideState>(
       buildWhen: (p, c) => p != c,
       builder: (context, state) {
+        final isSubmitting = state.status == ClientRideStatus.requesting;
         return Material(
           color: const Color(0xFF0F0F0F),
           elevation: 16,
@@ -675,7 +445,9 @@ class ReadyToRequestBottomBar extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: isSubmitting
+                          ? null
+                          : () {
                         final authState = context.read<AuthBloc>().state;
                         if (authState is! AuthAuthenticated) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -699,14 +471,25 @@ class ReadyToRequestBottomBar extends StatelessWidget {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        'Pedir Lleva',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.black,
+                                ),
+                              ),
+                            )
+                          : const Text(
+                              'Pedir Lleva',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -724,7 +507,7 @@ class ReadyToRequestBottomBar extends StatelessWidget {
                           minHeight: 48,
                         ),
                         onPressed: () =>
-                            _showRidePreferencesSheet(context, state),
+                            showClientRidePreferencesSheet(context, state),
                         icon: const Icon(
                           Icons.tune,
                           color: AppTheme.primaryBlue,
@@ -762,27 +545,34 @@ class _ReadyToRequestLayerState extends State<ReadyToRequestLayer> {
   static const double _kReadyVehicleBlockEstimatePx = 280;
 
   final GlobalKey _readyFareSectionKey = GlobalKey();
+  final GlobalKey _readyPanelHeaderKey = GlobalKey();
   final GlobalKey _readyPanelOuterContentKey = GlobalKey();
 
-  double _readyRequestPanelExtent = 0.30;
-  double _readyRequestPanelMinChildSize = 0.30;
+  double _readyRequestPanelExtent = 0.38;
+  double _readyRequestPanelMinChildSize = 0.38;
   double _readyRequestPanelMaxChildSize = 0.55;
 
   double _rideRequestPanelBottomInset(BuildContext context) {
     return _rideReadyBottomBarHeight + MediaQuery.paddingOf(context).bottom;
   }
 
-  void _syncReadyPanelExtents(double panelHeight, bool showVehicleTypes) {
+  void _syncReadyPanelExtents(double slotHeight, bool showVehicleTypes) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final fareBox =
           _readyFareSectionKey.currentContext?.findRenderObject() as RenderBox?;
       if (fareBox == null || !fareBox.hasSize) return;
 
-      const scrollPadV = 8.0 + 16.0;
+      final headerBox = _readyPanelHeaderKey.currentContext?.findRenderObject()
+          as RenderBox?;
+      final headerH = (headerBox != null && headerBox.hasSize)
+          ? headerBox.size.height
+          : 52.0;
       final fareH = fareBox.size.height;
-      final minPx = fareH + scrollPadV + 2;
-      final nextMin = (minPx / panelHeight).clamp(0.08, 0.95);
+      // Mínimo: asa + título + cuadro de precio y texto "Tarifa sugerida" visibles.
+      const scrollBottomPad = 8.0;
+      final minPx = headerH + fareH + scrollBottomPad;
+      final nextMin = (minPx / slotHeight).clamp(0.12, 0.95);
 
       double maxPx;
       if (showVehicleTypes) {
@@ -796,7 +586,7 @@ class _ReadyToRequestLayerState extends State<ReadyToRequestLayer> {
       } else {
         maxPx = minPx + 2 + _kReadyVehicleBlockEstimatePx;
       }
-      final nextMax = (maxPx / panelHeight).clamp(nextMin + 0.02, 1.0);
+      final nextMax = (maxPx / slotHeight).clamp(nextMin + 0.02, 1.0);
 
       if ((nextMin - _readyRequestPanelMinChildSize).abs() > 0.008 ||
           (nextMax - _readyRequestPanelMaxChildSize).abs() > 0.008) {
@@ -817,10 +607,20 @@ class _ReadyToRequestLayerState extends State<ReadyToRequestLayer> {
   @override
   Widget build(BuildContext context) {
     final h = MediaQuery.sizeOf(context).height;
-    final panelHeight = h * 0.56;
+    // Hueco máximo reservado bajo la UI (fracción de pantalla). Las fracciones
+    // min/max/extent del panel son relativas a esta altura "slot".
+    final slotHeight = h * 0.46;
     final showVehicleTypes = _readyRequestPanelExtent >=
         (_readyRequestPanelMinChildSize + 0.08);
-    _syncReadyPanelExtents(panelHeight, showVehicleTypes);
+    _syncReadyPanelExtents(slotHeight, showVehicleTypes);
+
+    final minF = _readyRequestPanelMinChildSize;
+    final maxF = _readyRequestPanelMaxChildSize;
+    final panelPixelHeight =
+        (slotHeight * _readyRequestPanelExtent.clamp(minF, maxF)).clamp(
+      120.0,
+      slotHeight * maxF,
+    );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -839,120 +639,142 @@ class _ReadyToRequestLayerState extends State<ReadyToRequestLayer> {
                 top: Radius.circular(24),
               ),
               clipBehavior: Clip.antiAlias,
-              child: SizedBox(
-                height: panelHeight,
-                child: NotificationListener<DraggableScrollableNotification>(
-                  onNotification: (notification) {
-                    if (!mounted) return false;
-                    if ((_readyRequestPanelExtent - notification.extent).abs() >
-                        0.01) {
-                      setState(() {
-                        _readyRequestPanelExtent = notification.extent;
-                      });
-                    }
-                    return false;
-                  },
-                  child: DraggableScrollableSheet(
-                    expand: false,
-                    minChildSize: _readyRequestPanelMinChildSize,
-                    initialChildSize: _readyRequestPanelMinChildSize,
-                    maxChildSize: _readyRequestPanelMaxChildSize,
-                    builder: (ctx, scrollController) {
-                      return BlocBuilder<ClientRideBloc, ClientRideState>(
-                        buildWhen: (p, c) => p != c,
-                        builder: (ctx, st) {
-                          if (st.status != ClientRideStatus.readyToRequest) {
-                            return const SizedBox.shrink();
-                          }
-                          return Container(
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF1A1A1A),
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(24),
-                              ),
+              child: BlocBuilder<ClientRideBloc, ClientRideState>(
+                builder: (ctx, st) {
+                  if (st.status != ClientRideStatus.readyToRequest) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    height: panelPixelHeight,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(24),
+                      ),
+                    ),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) {
+                        if (!mounted) return;
+                        final dy = details.primaryDelta ?? 0;
+                        if (dy == 0) return;
+                        final atMax =
+                            (_readyRequestPanelExtent - maxF).abs() < 0.015;
+                        // When panel is fully expanded and user drags UP, let the inner
+                        // SingleChildScrollView handle it instead of resizing the panel.
+                        if (atMax && dy < 0) return;
+                        setState(() {
+                          _readyRequestPanelExtent =
+                              (_readyRequestPanelExtent - dy / slotHeight)
+                                  .clamp(minF, maxF);
+                        });
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            key: _readyPanelHeaderKey,
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Center(
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[600],
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'Tarifa',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppTheme.darkTextSecondary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: SingleChildScrollView(
-                              controller: scrollController,
-                              physics: const ClampingScrollPhysics(),
-                              padding: EdgeInsets.zero,
-                              child: Padding(
-                                key: _readyPanelOuterContentKey,
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Container(
-                                      key: _readyFareSectionKey,
+                          ),
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final atMinHeight =
+                                    (_readyRequestPanelExtent - minF).abs() <
+                                        0.015;
+                                return SingleChildScrollView(
+                                  physics: atMinHeight
+                                      ? const NeverScrollableScrollPhysics()
+                                      : const ClampingScrollPhysics(),
+                                  padding: EdgeInsets.zero,
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight: atMinHeight
+                                          ? constraints.maxHeight
+                                          : 0,
+                                    ),
+                                    child: Padding(
+                                      key: _readyPanelOuterContentKey,
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        0,
+                                        12,
+                                        16,
+                                      ),
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         crossAxisAlignment:
                                             CrossAxisAlignment.stretch,
                                         children: [
-                                          Center(
-                                            child: Container(
-                                              width: 40,
-                                              height: 4,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[600],
-                                                borderRadius:
-                                                    BorderRadius.circular(2),
+                                          Container(
+                                            key: _readyFareSectionKey,
+                                            child: Padding(
+                                              padding: const EdgeInsets.fromLTRB(
+                                                8,
+                                                0,
+                                                8,
+                                                8,
+                                              ),
+                                              child: RidePriceSection(
+                                                priceController:
+                                                    widget.priceController,
+                                                state: st,
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
-                                          const Text(
-                                            'Tarifa',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: AppTheme
-                                                  .darkTextSecondary,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
+                                          if (showVehicleTypes) ...[
+                                            const SizedBox(height: 2),
+                                            Padding(
+                                              padding: const EdgeInsets.fromLTRB(
+                                                8,
+                                                0,
+                                                8,
+                                                8,
+                                              ),
+                                              child: VehicleCategorySection(
+                                                state: st,
+                                              ),
                                             ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.fromLTRB(
-                                              8,
-                                              12,
-                                              8,
-                                              8,
-                                            ),
-                                            child: RidePriceSection(
-                                              priceController:
-                                                  widget.priceController,
-                                              state: st,
-                                            ),
-                                          ),
+                                          ],
                                         ],
                                       ),
                                     ),
-                                    if (showVehicleTypes) ...[
-                                      const SizedBox(height: 2),
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          8,
-                                          0,
-                                          8,
-                                          8,
-                                        ),
-                                        child: VehicleCategorySection(
-                                          state: st,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),

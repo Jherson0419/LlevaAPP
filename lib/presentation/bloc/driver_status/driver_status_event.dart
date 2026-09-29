@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../../domain/entities/ride_entity.dart';
+import '../../../../domain/entities/ride_offer_entity.dart';
 
 abstract class DriverStatusEvent extends Equatable {
   const DriverStatusEvent();
@@ -42,16 +43,14 @@ class UpdateOffer extends DriverStatusEvent {
 class AcceptRide extends DriverStatusEvent {
   final RideEntity ride;
   final String driverId;
-  final double finalPrice;
 
   const AcceptRide({
     required this.ride,
     required this.driverId,
-    required this.finalPrice,
   });
 
   @override
-  List<Object?> get props => [ride, driverId, finalPrice];
+  List<Object?> get props => [ride, driverId];
 }
 
 class RejectRide extends DriverStatusEvent {
@@ -104,4 +103,24 @@ class StartTrip extends DriverStatusEvent {
 class FinishTrip extends DriverStatusEvent {
   const FinishTrip();
 }
+
+class RecoverDriverActiveRide extends DriverStatusEvent {
+  final String driverId;
+
+  const RecoverDriverActiveRide(this.driverId);
+
+  @override
+  List<Object?> get props => [driverId];
+}
+
+/// Cambios en `ride_offers` para el viaje actual (conductor esperando decisión).
+class DriverRideOffersUpdated extends DriverStatusEvent {
+  final List<RideOfferEntity> offers;
+
+  const DriverRideOffersUpdated(this.offers);
+
+  @override
+  List<Object?> get props => [offers];
+}
+
 

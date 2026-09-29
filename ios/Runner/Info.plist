@@ -31,8 +31,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -43,11 +41,30 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Necesitamos acceso a la cámara para fotografiar tus documentos de conductor.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necesitamos acceso a tus fotos para adjuntar documentos de conductor.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Lleva necesita tu ubicación para mostrarte en el mapa y conectarte con conductores cercanos.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Los conductores de Lleva necesitan compartir su ubicación en tiempo real para que los pasajeros puedan rastrear su viaje.</string>
+	<key>GoogleMapsApiKey</key>
+	<string>$(GOOGLE_MAPS_KEY)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.620550412913-b8cuvqb84tou4vmc3cdhqu6g2gnbb3le</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

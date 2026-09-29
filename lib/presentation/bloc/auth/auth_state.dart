@@ -42,13 +42,26 @@ class AuthAuthenticated extends AuthState {
   List<Object?> get props => [user];
 }
 
-class AuthNeedsRegistration extends AuthState {
+/// Supabase confirmó el envío del SMS con el código; la UI puede arrancar el
+/// cooldown de reenvío. (No significa que el código sea correcto — eso lo
+/// determina el siguiente verifyOTP, ver [OtpVerified]).
+class AuthOtpSent extends AuthState {
   final String phone;
 
-  const AuthNeedsRegistration(this.phone);
+  const AuthOtpSent(this.phone);
 
   @override
   List<Object?> get props => [phone];
+}
+
+class AuthNeedsRegistration extends AuthState {
+  final String phone;
+  final String prefilledEmail;
+
+  const AuthNeedsRegistration(this.phone, {this.prefilledEmail = ''});
+
+  @override
+  List<Object?> get props => [phone, prefilledEmail];
 }
 
 class AuthError extends AuthState {
@@ -59,4 +72,3 @@ class AuthError extends AuthState {
   @override
   List<Object?> get props => [message];
 }
-

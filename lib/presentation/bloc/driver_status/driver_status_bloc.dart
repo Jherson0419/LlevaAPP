@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/utils/location_helper.dart';
 import '../../../../domain/entities/ride_entity.dart';
+import '../../../../domain/entities/ride_offer_entity.dart';
 import '../../../../domain/repositories/ride_repository.dart';
 import 'driver_status_event.dart';
 import 'driver_status_state.dart';
@@ -13,10 +14,12 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
   final RideRepository rideRepository;
   StreamSubscription<List<RideEntity>>? _ridesSubscription;
   StreamSubscription<RideEntity>? _rideResolutionSubscription;
+  StreamSubscription<List<RideOfferEntity>>? _offersSubscription;
   StreamSubscription<Position>? _locationSubscription;
   String? _trackedRideId;
   List<RideEntity> _lastKnownRides = const [];
   Timer? _offerTimer;
+  String? _selfDriverIdForOffer;
 
   DriverStatusBloc({required this.rideRepository}) : super(const DriverOffline()) {
     on<ToggleStatus>(_onToggleStatus);
@@ -27,10 +30,20 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     on<OfferExpired>(_onOfferExpired);
     on<UpdateOffer>(_onUpdateOffer);
     on<CounterOfferRide>(_onCounterOfferRide);
+    on<DriverRideOffersUpdated>(_onDriverRideOffersUpdated);
     on<ActiveRideRemoteUpdated>(_onActiveRideRemoteUpdated);
     on<NotifyArrival>(_onNotifyArrival);
     on<StartTrip>(_onStartTrip);
     on<FinishTrip>(_onFinishTrip);
+    on<RecoverDriverActiveRide>(_onRecoverDriverActiveRide);
+  }
+
+  void _cancelWaitingSubscriptions() {
+    _rideResolutionSubscription?.cancel();
+    _rideResolutionSubscription = null;
+    _offersSubscription?.cancel();
+    _offersSubscription = null;
+    _selfDriverIdForOffer = null;
   }
 
   void _onToggleStatus(
@@ -38,41 +51,42 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     Emitter<DriverStatusState> emit,
   ) async {
     if (state is DriverOffline) {
-      // Cambiar a Online e iniciar suscripción
       try {
         final position = await LocationHelper.determinePosition();
         final lat = position.latitude;
         final lng = position.longitude;
 
-        // Emitir estado Online inicial con lista vacía
         emit(const DriverOnline(availableRides: []));
 
-        // Iniciar suscripción al stream de viajes cercanos
         _ridesSubscription?.cancel();
         _ridesSubscription = rideRepository
             .getNearbyRideRequests(lat, lng, 5.0)
             .listen(
           (rides) => add(NearbyRidesUpdated(rides)),
-          onError: (error) {
-            // Manejar errores silenciosamente o emitir un estado de error
-            // TODO: Implementar logging adecuado
-          },
+          onError: (_) {},
         );
-      } catch (e) {
-        // Si hay error al obtener ubicación, mantener offline
+      } catch (_) {
         emit(const DriverOffline());
       }
     } else if (state is DriverOnline ||
         state is DriverNegotiating ||
+        state is DriverWaitingForPassengerDecision ||
         state is DriverOnTrip ||
         state is DriverArrivedAtPickup ||
         state is DriverTripInProgress) {
-      _cancelOfferTimer();
-      // Cancelar suscripción y cambiar a Offline
+      if (state is DriverWaitingForPassengerDecision) {
+        final w = state as DriverWaitingForPassengerDecision;
+        try {
+          await rideRepository.withdrawRideOffer(w.submittedOfferId);
+        } catch (_) {}
+        _cancelWaitingSubscriptions();
+        _cancelOfferTimer();
+      } else {
+        _cancelOfferTimer();
+        _cancelWaitingSubscriptions();
+      }
       _ridesSubscription?.cancel();
       _ridesSubscription = null;
-      _rideResolutionSubscription?.cancel();
-      _rideResolutionSubscription = null;
       _stopLocationTracking();
       _lastKnownRides = const [];
       emit(const DriverOffline());
@@ -83,7 +97,6 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     NearbyRidesUpdated event,
     Emitter<DriverStatusState> emit,
   ) {
-    // Actualizar la lista de viajes disponibles
     if (state is DriverOnline) {
       _lastKnownRides = event.rides;
       emit(DriverOnline(availableRides: _lastKnownRides));
@@ -99,7 +112,6 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
         DriverNegotiating(
           activeRide: event.ride,
           currentOffer: event.ride.offeredPrice,
-          awaitingPassengerResponse: false,
         ),
       );
     }
@@ -110,57 +122,29 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     Emitter<DriverStatusState> emit,
   ) async {
     if (state is! DriverNegotiating) return;
-    if ((state as DriverNegotiating).awaitingPassengerResponse) return;
 
-    try {
-      _rideResolutionSubscription?.cancel();
-      _rideResolutionSubscription = null;
-      await rideRepository.updateRideStatus(
-        event.ride.id,
-        'accepted',
-        driverId: event.driverId,
-        finalPrice: event.finalPrice,
-      );
+    _rideResolutionSubscription?.cancel();
+    _rideResolutionSubscription = null;
 
-      final updatedRide = RideEntity(
-        id: event.ride.id,
-        clientId: event.ride.clientId,
-        driverId: event.driverId,
-        originLat: event.ride.originLat,
-        originLng: event.ride.originLng,
-        destLat: event.ride.destLat,
-        destLng: event.ride.destLng,
-        originName: event.ride.originName,
-        destName: event.ride.destName,
-        status: 'accepted',
-        offeredPrice: event.ride.offeredPrice,
-        finalPrice: event.finalPrice,
-        createdAt: event.ride.createdAt,
-        driverLat: event.ride.driverLat,
-        driverLng: event.ride.driverLng,
-        paymentMethod: event.ride.paymentMethod,
-        clientFirstName: event.ride.clientFirstName,
-        clientCompletedTrips: event.ride.clientCompletedTrips,
-        clientPassengerRating: event.ride.clientPassengerRating,
-      );
-
-      emit(DriverOnTrip(updatedRide));
-      await _startLocationTracking(updatedRide.id);
-    } catch (_) {
-      // Si falla, volver a online con la última lista conocida
-      emit(DriverOnline(availableRides: _lastKnownRides));
-      await _restartSubscription();
-    }
+    final agreedPrice = event.ride.offeredPrice;
+    await _submitNegotiationOffer(
+      ride: event.ride,
+      driverId: event.driverId,
+      finalPrice: agreedPrice,
+      emit: emit,
+    );
   }
 
   void _onRejectRide(
     RejectRide event,
     Emitter<DriverStatusState> emit,
   ) {
+    if (state is DriverWaitingForPassengerDecision) {
+      add(OfferExpired((state as DriverWaitingForPassengerDecision).activeRide));
+      return;
+    }
     _cancelOfferTimer();
-    _rideResolutionSubscription?.cancel();
-    _rideResolutionSubscription = null;
-    // Volver a estado Online usando la última lista de viajes, sin tocar Supabase
+    _cancelWaitingSubscriptions();
     emit(DriverOnline(availableRides: _lastKnownRides));
     _restartSubscription();
   }
@@ -171,12 +155,10 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
   ) {
     if (state is DriverNegotiating) {
       final negotiatingState = state as DriverNegotiating;
-      if (negotiatingState.awaitingPassengerResponse) return;
       emit(
         DriverNegotiating(
           activeRide: negotiatingState.activeRide,
           currentOffer: event.newOffer,
-          awaitingPassengerResponse: false,
         ),
       );
     }
@@ -187,56 +169,56 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     Emitter<DriverStatusState> emit,
   ) async {
     if (state is! DriverNegotiating) return;
-    final negotiatingState = state as DriverNegotiating;
-    if (negotiatingState.awaitingPassengerResponse) return;
 
+    await _submitNegotiationOffer(
+      ride: event.ride,
+      driverId: event.driverId,
+      finalPrice: event.newPrice,
+      emit: emit,
+    );
+  }
+
+  Future<void> _submitNegotiationOffer({
+    required RideEntity ride,
+    required String driverId,
+    required double finalPrice,
+    required Emitter<DriverStatusState> emit,
+  }) async {
     try {
       _cancelOfferTimer();
 
-      await rideRepository.updateRideStatus(
-        event.ride.id,
-        'negotiating',
-        driverId: event.driverId,
-        finalPrice: event.newPrice,
+      final offer = await rideRepository.submitNegotiationOffer(
+        rideId: ride.id,
+        driverId: driverId,
+        offeredPrice: finalPrice,
       );
 
-      final updated = RideEntity(
-        id: event.ride.id,
-        clientId: event.ride.clientId,
-        driverId: event.driverId,
-        originLat: event.ride.originLat,
-        originLng: event.ride.originLng,
-        destLat: event.ride.destLat,
-        destLng: event.ride.destLng,
-        originName: event.ride.originName,
-        destName: event.ride.destName,
-        status: 'negotiating',
-        offeredPrice: event.ride.offeredPrice,
-        finalPrice: event.newPrice,
-        createdAt: event.ride.createdAt,
-        driverLat: event.ride.driverLat,
-        driverLng: event.ride.driverLng,
-        paymentMethod: event.ride.paymentMethod,
-        clientFirstName: event.ride.clientFirstName,
-        clientCompletedTrips: event.ride.clientCompletedTrips,
-        clientPassengerRating: event.ride.clientPassengerRating,
+      _lastKnownRides =
+          _lastKnownRides.where((r) => r.id != ride.id).toList();
+
+      _selfDriverIdForOffer = driverId;
+
+      _offersSubscription?.cancel();
+      _offersSubscription =
+          rideRepository.listenToRideOffers(ride.id, pendingOnly: false).listen(
+        (list) => add(DriverRideOffersUpdated(list)),
       );
 
       emit(
-        DriverNegotiating(
-          activeRide: updated,
-          currentOffer: event.newPrice,
-          awaitingPassengerResponse: true,
+        DriverWaitingForPassengerDecision(
+          activeRide: ride,
+          submittedOfferId: offer.id,
+          submittedPrice: finalPrice,
         ),
       );
 
       _rideResolutionSubscription?.cancel();
       _rideResolutionSubscription =
-          rideRepository.subscribeToRide(updated.id).listen(
-        (ride) => add(ActiveRideRemoteUpdated(ride)),
+          rideRepository.subscribeToRide(ride.id).listen(
+        (r) => add(ActiveRideRemoteUpdated(r)),
       );
 
-      final rideForExpiry = updated;
+      final rideForExpiry = ride;
       _offerTimer = Timer(const Duration(seconds: 10), () {
         _offerTimer = null;
         add(OfferExpired(rideForExpiry));
@@ -247,30 +229,49 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     }
   }
 
+  void _onDriverRideOffersUpdated(
+    DriverRideOffersUpdated event,
+    Emitter<DriverStatusState> emit,
+  ) {
+    if (state is! DriverWaitingForPassengerDecision) return;
+    final w = state as DriverWaitingForPassengerDecision;
+    final selfId = _selfDriverIdForOffer;
+    if (selfId == null || selfId.isEmpty) return;
+
+    RideOfferEntity? mine;
+    for (final o in event.offers) {
+      if (o.driverId == selfId && o.rideId == w.activeRide.id) {
+        mine = o;
+        break;
+      }
+    }
+
+    if (mine == null) {
+      return;
+    }
+
+    if (mine.status == 'rejected' || mine.status == 'withdrawn') {
+      _cancelOfferTimer();
+      _cancelWaitingSubscriptions();
+      emit(DriverOnline(availableRides: _lastKnownRides));
+      _restartSubscription();
+    }
+  }
+
   Future<void> _onOfferExpired(
     OfferExpired event,
     Emitter<DriverStatusState> emit,
   ) async {
-    if (state is! DriverNegotiating) return;
-    final n = state as DriverNegotiating;
-    if (!n.awaitingPassengerResponse || n.activeRide.id != event.ride.id) {
-      return;
-    }
+    if (state is! DriverWaitingForPassengerDecision) return;
+    final w = state as DriverWaitingForPassengerDecision;
+    if (w.activeRide.id != event.ride.id) return;
 
     _cancelOfferTimer();
-    _rideResolutionSubscription?.cancel();
-    _rideResolutionSubscription = null;
-
     try {
-      await rideRepository.updateRideStatus(
-        event.ride.id,
-        'searching',
-        clearDriver: true,
-      );
-    } catch (_) {
-      // Aun así volvemos a online para no bloquear al conductor
-    }
+      await rideRepository.withdrawRideOffer(w.submittedOfferId);
+    } catch (_) {}
 
+    _cancelWaitingSubscriptions();
     emit(DriverOnline(availableRides: _lastKnownRides));
     await _restartSubscription();
   }
@@ -280,32 +281,117 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     Emitter<DriverStatusState> emit,
   ) {
     final ride = event.ride;
+    final selfId = _selfDriverIdForOffer;
+
     if (ride.status == 'accepted') {
       _cancelOfferTimer();
-      _rideResolutionSubscription?.cancel();
-      _rideResolutionSubscription = null;
-      emit(DriverOnTrip(ride));
-      Future.microtask(() => _startLocationTracking(ride.id));
+      final won = selfId != null && ride.driverId == selfId;
+      _cancelWaitingSubscriptions();
+      if (won) {
+        emit(DriverOnTrip(ride));
+        Future.microtask(() => _startLocationTracking(ride.id));
+      } else {
+        emit(DriverOnline(availableRides: _lastKnownRides));
+        _restartSubscription();
+      }
       return;
     }
-    if (ride.status == 'searching') {
+
+    // Con ofertas en `ride_offers` el viaje sigue en `searching` (o `negotiating`
+    // en datos antiguos) hasta que el pasajero elija: no cerrar la UI de oferta.
+    if (ride.status == 'searching' || ride.status == 'negotiating') {
+      return;
+    }
+
+    if (ride.status == 'cancelled' || ride.status == 'canceled') {
+      if (state is DriverWaitingForPassengerDecision) {
+        _cancelOfferTimer();
+        final w = state as DriverWaitingForPassengerDecision;
+        unawaited(
+          rideRepository.withdrawRideOffer(w.submittedOfferId).catchError((_) {}),
+        );
+        _cancelWaitingSubscriptions();
+        emit(DriverOnline(availableRides: _lastKnownRides));
+        _restartSubscription();
+        return;
+      }
+      if (state is DriverNegotiating) {
+        _cancelOfferTimer();
+        _cancelWaitingSubscriptions();
+        emit(DriverOnline(availableRides: _lastKnownRides));
+        _restartSubscription();
+        return;
+      }
+      return;
+    }
+
+    if (ride.status == 'arrived') {
+      emit(DriverArrivedAtPickup(ride));
+      return;
+    }
+    if (ride.status == 'ongoing') {
+      emit(DriverTripInProgress(ride));
+      return;
+    }
+  }
+
+  Future<void> _onRecoverDriverActiveRide(
+    RecoverDriverActiveRide event,
+    Emitter<DriverStatusState> emit,
+  ) async {
+    final driverId = event.driverId.trim();
+    if (driverId.isEmpty) return;
+
+    try {
+      final pendingCtx =
+          await rideRepository.getPendingOfferContextForDriver(driverId);
+      if (pendingCtx != null) {
+        _cancelOfferTimer();
+        _ridesSubscription?.cancel();
+        _ridesSubscription = null;
+        _selfDriverIdForOffer = driverId;
+        _offersSubscription?.cancel();
+        _offersSubscription = rideRepository
+            .listenToRideOffers(pendingCtx.ride.id, pendingOnly: false)
+            .listen((list) => add(DriverRideOffersUpdated(list)));
+        _rideResolutionSubscription?.cancel();
+        _rideResolutionSubscription =
+            rideRepository.subscribeToRide(pendingCtx.ride.id).listen(
+          (r) => add(ActiveRideRemoteUpdated(r)),
+        );
+        emit(
+          DriverWaitingForPassengerDecision(
+            activeRide: pendingCtx.ride,
+            submittedOfferId: pendingCtx.offer.id,
+            submittedPrice: pendingCtx.offer.offeredPrice,
+          ),
+        );
+        return;
+      }
+
+      final recovered = await rideRepository.getActiveRideByDriverId(driverId);
+      if (recovered == null) return;
+
       _cancelOfferTimer();
+      _ridesSubscription?.cancel();
+      _ridesSubscription = null;
       _rideResolutionSubscription?.cancel();
-      _rideResolutionSubscription = null;
-      emit(DriverOnline(availableRides: _lastKnownRides));
-      _restartSubscription();
-      return;
-    }
-    if (ride.status == 'negotiating' && state is DriverNegotiating) {
-      final n = state as DriverNegotiating;
-      emit(
-        DriverNegotiating(
-          activeRide: ride,
-          currentOffer: ride.finalPrice ?? n.currentOffer,
-          awaitingPassengerResponse: true,
-        ),
+      _rideResolutionSubscription =
+          rideRepository.subscribeToRide(recovered.id).listen(
+        (r) => add(ActiveRideRemoteUpdated(r)),
       );
-    }
+
+      if (recovered.status == 'accepted') {
+        emit(DriverOnTrip(_rideWithStatus(recovered, 'accepted')));
+        await _startLocationTracking(recovered.id);
+      } else if (recovered.status == 'arrived') {
+        emit(DriverArrivedAtPickup(_rideWithStatus(recovered, 'arrived')));
+        await _startLocationTracking(recovered.id);
+      } else if (recovered.status == 'ongoing') {
+        emit(DriverTripInProgress(_rideWithStatus(recovered, 'ongoing')));
+        await _startLocationTracking(recovered.id);
+      }
+    } catch (_) {}
   }
 
   Future<void> _onNotifyArrival(
@@ -317,9 +403,7 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     try {
       await rideRepository.updateRideStatus(trip.activeRide.id, 'arrived');
       emit(DriverArrivedAtPickup(_rideWithStatus(trip.activeRide, 'arrived')));
-    } catch (_) {
-      // Estado sin cambios; reintento desde UI si se desea
-    }
+    } catch (_) {}
   }
 
   Future<void> _onStartTrip(
@@ -415,6 +499,7 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
       clientFirstName: r.clientFirstName,
       clientCompletedTrips: r.clientCompletedTrips,
       clientPassengerRating: r.clientPassengerRating,
+      clientProfilePicUrl: r.clientProfilePicUrl,
     );
   }
 
@@ -423,7 +508,6 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     _offerTimer = null;
   }
 
-  /// Reinicia la suscripción de viajes cercanos
   Future<void> _restartSubscription() async {
     try {
       final position = await LocationHelper.determinePosition();
@@ -435,13 +519,9 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
           .getNearbyRideRequests(lat, lng, 5.0)
           .listen(
         (rides) => add(NearbyRidesUpdated(rides)),
-        onError: (error) {
-          // TODO: Implementar logging adecuado
-        },
+        onError: (_) {},
       );
-    } catch (e) {
-      // TODO: Implementar logging adecuado
-    }
+    } catch (_) {}
   }
 
   @override
@@ -450,6 +530,7 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     _locationSubscription?.cancel();
     _ridesSubscription?.cancel();
     _rideResolutionSubscription?.cancel();
+    _offersSubscription?.cancel();
     return super.close();
   }
 }

@@ -27,11 +27,17 @@
             </intent-filter>
         </activity>
         
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key — inyectada por Gradle desde GOOGLE_MAPS_KEY
+             (env var o .env en la raíz del repo). Ver android/app/build.gradle.kts
+             y docs/setup_env.md. Antes estaba hardcodeada aquí. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCCYG5f-y30dM9GDSsSvkLyhJraMtfjO5o"/>
-        
+            android:value="${GOOGLE_MAPS_KEY}"/>
+
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

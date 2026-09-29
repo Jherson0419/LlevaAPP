@@ -11,10 +11,8 @@ import '../../bloc/client_ride/client_ride_bloc.dart';
 
 /// True cuando debe mostrarse el resumen origen/destino sobre el mapa.
 bool clientDashboardShouldShowRouteSummary(ClientRideState state) {
-  if (state.originLatLng != null && state.destLatLng != null) {
-    return true;
-  }
-  return state.activeRide != null;
+  if (state.activeRide != null) return true;
+  return state.status == ClientRideStatus.readyToRequest;
 }
 
 String _firstAddressLine(String? raw) {
@@ -38,6 +36,27 @@ String _summaryDestLabel(ClientRideState state) {
   final r = state.activeRide;
   if (r != null) return _firstAddressLine(r.destName);
   return '—';
+}
+
+int _routeMinutesForSummary(ClientRideState state) {
+  final seconds = state.routeDurationSeconds;
+  if (seconds != null && seconds > 0) {
+    return (seconds / 60.0).ceil().clamp(1, 999);
+  }
+  final km = state.routeDistanceKm;
+  if (km != null && km > 0) {
+    return (km / 30.0 * 60.0).ceil().clamp(1, 999);
+  }
+  return 0;
+}
+
+String? _routeStatsLineForSummary(ClientRideState state) {
+  if (state.status != ClientRideStatus.readyToRequest) return null;
+  final km = state.routeDistanceKm;
+  if (km == null || km <= 0) return null;
+  final minutes = _routeMinutesForSummary(state);
+  if (minutes <= 0) return '${km.toStringAsFixed(1)} km';
+  return '$minutes min · ${km.toStringAsFixed(1)} km';
 }
 
 /// Columna visual: origen (círculo cyan) — línea — destino (cuadrado cyan).
@@ -174,6 +193,7 @@ class _MapRouteSummaryBarContent extends StatelessWidget {
     final canEdit = state.status == ClientRideStatus.readyToRequest;
     final originText = _summaryOriginLabel(state);
     final destText = _summaryDestLabel(state);
+    final destRouteStats = _routeStatsLineForSummary(state);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -259,6 +279,20 @@ class _MapRouteSummaryBarContent extends StatelessWidget {
                                       height: 1.25,
                                     ),
                                   ),
+                                  if (destRouteStats != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      destRouteStats,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Color(0xFF00D4FF),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.2,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

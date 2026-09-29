@@ -6,6 +6,7 @@ import '../../../core/enums/client_ride_status.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_event.dart';
+import '../../bloc/auth/auth_state.dart';
 import '../../bloc/client_ride/client_ride_bloc.dart';
 import '../../widgets/client/client_dashboard_main_stack.dart';
 import '../../widgets/client/client_drawer.dart';
@@ -33,6 +34,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   final ScrollController _panelScrollController = ScrollController();
   final GlobalKey _bodyStackKey = GlobalKey();
   final GlobalKey _mapLayerKey = GlobalKey();
+  final ValueNotifier<bool> _mapGestureActive = ValueNotifier<bool>(false);
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     _destFocusNode.dispose();
     _pulseController.dispose();
     _panelScrollController.dispose();
+    _mapGestureActive.dispose();
     super.dispose();
   }
 
@@ -74,15 +77,21 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.of(context);
+    final authState = context.read<AuthBloc>().state;
+    final clientId =
+        authState is AuthAuthenticated ? authState.user.id.trim() : '';
     return BlocProvider(
-      create: (_) => di.sl<ClientRideBloc>(),
+      create: (_) => di.sl<ClientRideBloc>()
+        ..add(const InitializePickupFromCurrentLocation())
+        ..add(CheckActiveRide(clientId)),
       child: Builder(
         builder: (context) {
           final drawerWidth = MediaQuery.sizeOf(context).width * 0.78;
 
           return Scaffold(
             key: _scaffoldKey,
-            backgroundColor: AppTheme.darkBackground,
+            backgroundColor: colors.background,
             drawer: Drawer(
               width: drawerWidth,
               backgroundColor: const Color(0xFF0A0A0A),
@@ -122,6 +131,26 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
                 } else if (state.status != ClientRideStatus.readyToRequest) {
                   _lastTariffSyncKey = null;
                 }
+                if (state.originName != null &&
+                    state.originName!.isNotEmpty &&
+                    _originController.text != state.originName) {
+                  _originController.value = TextEditingValue(
+                    text: state.originName!,
+                    selection: TextSelection.collapsed(
+                      offset: state.originName!.length,
+                    ),
+                  );
+                }
+                if (state.destName != null &&
+                    state.destName!.isNotEmpty &&
+                    _destController.text != state.destName) {
+                  _destController.value = TextEditingValue(
+                    text: state.destName!,
+                    selection: TextSelection.collapsed(
+                      offset: state.destName!.length,
+                    ),
+                  );
+                }
               },
               child: ClientDashboardMainStack(
                 scaffoldKey: _scaffoldKey,
@@ -135,6 +164,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
                 originFocusNode: _originFocusNode,
                 destFocusNode: _destFocusNode,
                 onScrollPanelToTop: _scrollPanelToTop,
+                mapGestureActiveListenable: _mapGestureActive,
               ),
             ),
           );

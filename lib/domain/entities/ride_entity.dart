@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 /// Entidad de dominio que representa un Viaje (Ride) en la aplicación.
-/// 
+///
 /// Esta clase es inmutable y representa la estructura de datos
 /// independiente de cualquier fuente de datos externa.
 class RideEntity extends Equatable {
@@ -14,13 +14,16 @@ class RideEntity extends Equatable {
   final double destLng;
   final String originName;
   final String destName;
-  final String status; // 'searching', 'negotiating', 'accepted', 'completed', 'cancelled'
+  final String
+      status; // 'searching', 'negotiating', 'accepted', 'completed', 'cancelled'
   final double offeredPrice;
   final double? finalPrice;
   final DateTime createdAt;
+
   /// Última posición reportada del conductor (tabla `rides`).
   final double? driverLat;
   final double? driverLng;
+
   /// `efectivo` | `yape` | `plin` (u otros valores desde Supabase).
   final String paymentMethod;
 
@@ -32,6 +35,30 @@ class RideEntity extends Equatable {
 
   /// Valoración del pasajero en `profiles.passenger_rating` si existe en la BD.
   final double? clientPassengerRating;
+
+  /// Foto del pasajero (`profiles.profile_pic_url`), enriquecido para listados del conductor.
+  final String? clientProfilePicUrl;
+
+  /// Nombre completo del conductor (profiles.full_name).
+  final String? driverFullName;
+
+  /// URL de foto de perfil del conductor (profiles.profile_pic_url).
+  final String? driverProfilePicUrl;
+
+  /// Valoración del conductor (profiles.driver_rating).
+  final double? driverRating;
+
+  /// Cantidad de viajes finalizados del conductor.
+  final int driverCompletedTrips;
+
+  /// Modelo del auto del conductor (profiles.car_model).
+  final String? driverCarModel;
+
+  /// Marca del auto del conductor (profiles.car_brand).
+  final String? driverCarBrand;
+
+  /// Placa del auto del conductor (profiles.car_plate).
+  final String? driverCarPlate;
 
   const RideEntity({
     required this.id,
@@ -53,6 +80,14 @@ class RideEntity extends Equatable {
     this.clientFirstName = '',
     this.clientCompletedTrips = 0,
     this.clientPassengerRating,
+    this.clientProfilePicUrl,
+    this.driverFullName,
+    this.driverProfilePicUrl,
+    this.driverRating,
+    this.driverCompletedTrips = 0,
+    this.driverCarModel,
+    this.driverCarBrand,
+    this.driverCarPlate,
   });
 
   @override
@@ -76,5 +111,13 @@ class RideEntity extends Equatable {
         clientFirstName,
         clientCompletedTrips,
         clientPassengerRating,
+        clientProfilePicUrl,
+        driverFullName,
+        driverProfilePicUrl,
+        driverRating,
+        driverCompletedTrips,
+        driverCarModel,
+        driverCarBrand,
+        driverCarPlate,
       ];
 }

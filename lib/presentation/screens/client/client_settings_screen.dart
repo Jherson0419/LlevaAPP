@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../cubit/theme_cubit.dart';
 
 class ClientSettingsScreen extends StatelessWidget {
   const ClientSettingsScreen({super.key});
@@ -21,6 +23,21 @@ class ClientSettingsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Apariencia
+            BlocBuilder<ThemeCubit, ThemeMode>(
+              builder: (context, mode) {
+                return _buildSettingsTile(
+                  context,
+                  icon: Icons.palette_outlined,
+                  title: 'Tema de la aplicación',
+                  subtitle: _themeModeLabel(mode),
+                  onTap: () => _showThemePicker(context),
+                );
+              },
+            ),
+
+            const SizedBox(height: 8),
+
             // Términos y Condiciones
             _buildSettingsTile(
               context,
@@ -165,6 +182,106 @@ class ClientSettingsScreen extends StatelessWidget {
                 : null),
         onTap: onTap,
       ),
+    );
+  }
+
+  String _themeModeLabel(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Claro';
+      case ThemeMode.dark:
+        return 'Oscuro';
+      case ThemeMode.system:
+        return 'Sistema';
+    }
+  }
+
+  void _showThemePicker(BuildContext context) {
+    final themeCubit = context.read<ThemeCubit>();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return BlocBuilder<ThemeCubit, ThemeMode>(
+          bloc: themeCubit,
+          builder: (context, mode) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[700],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Tema de la aplicación',
+                        style: TextStyle(
+                          color: AppTheme.darkText,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.light,
+                    groupValue: mode,
+                    activeColor: AppTheme.primaryBlue,
+                    title: const Text(
+                      'Claro',
+                      style: TextStyle(color: AppTheme.darkText),
+                    ),
+                    onChanged: (_) {
+                      themeCubit.setLight();
+                      Navigator.pop(sheetContext);
+                    },
+                  ),
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.dark,
+                    groupValue: mode,
+                    activeColor: AppTheme.primaryBlue,
+                    title: const Text(
+                      'Oscuro',
+                      style: TextStyle(color: AppTheme.darkText),
+                    ),
+                    onChanged: (_) {
+                      themeCubit.setDark();
+                      Navigator.pop(sheetContext);
+                    },
+                  ),
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.system,
+                    groupValue: mode,
+                    activeColor: AppTheme.primaryBlue,
+                    title: const Text(
+                      'Igual que el sistema',
+                      style: TextStyle(color: AppTheme.darkText),
+                    ),
+                    onChanged: (_) {
+                      themeCubit.setSystem();
+                      Navigator.pop(sheetContext);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

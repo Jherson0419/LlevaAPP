@@ -14,6 +14,11 @@ const _kLicenseCategories = ['A-I', 'A-IIa', 'A-IIb', 'A-III'];
 
 class RegisterProfileScreen extends StatefulWidget {
   final String phone;
+
+  /// Nombre completo recogido en el flujo de onboarding (OnboardingNameScreen).
+  /// Si no está vacío, el campo "Nombre completo" se muestra precargado y
+  /// de solo lectura.
+  final String prefilledName;
   final String? prefilledRole;
   final String? prefilledFirstName;
   final String? prefilledLastName;
@@ -39,6 +44,7 @@ class RegisterProfileScreen extends StatefulWidget {
   const RegisterProfileScreen({
     super.key,
     required this.phone,
+    this.prefilledName = '',
     this.prefilledRole,
     this.prefilledFirstName,
     this.prefilledLastName,
@@ -72,6 +78,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
   static const Color _inactive = Color(0xFF1A1A1A);
 
   final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _phoneController;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _driverCarBrandController =
       TextEditingController();
@@ -149,10 +156,18 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _phoneController = TextEditingController(text: widget.phone);
     _selectedRole = widget.prefilledRole == 'driver' ? 'driver' : 'client';
+    final prefEmail = widget.prefilledEmail?.trim() ?? '';
+    if (prefEmail.isNotEmpty) {
+      _clientEmailController.text = prefEmail;
+    }
+    final prefName = widget.prefilledName.trim();
     final fn = widget.prefilledFirstName?.trim() ?? '';
     final ln = widget.prefilledLastName?.trim() ?? '';
-    if (fn.isNotEmpty || ln.isNotEmpty) {
+    if (prefName.isNotEmpty) {
+      _nameController.text = prefName;
+    } else if (fn.isNotEmpty || ln.isNotEmpty) {
       _nameController.text = '$fn $ln'.trim();
     }
     _driverEmailController.text = widget.prefilledEmail?.trim() ?? '';
@@ -176,6 +191,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
 
   @override
   void dispose() {
+    _phoneController.dispose();
     _nameController.dispose();
     _driverCarBrandController.dispose();
     _driverCarModelController.dispose();
@@ -387,7 +403,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
 
     context.read<AuthBloc>().add(
           RegisterUser(
-            phone: widget.phone,
+            phone: _phoneController.text.trim(),
             fullName: _nameController.text.trim(),
             role: _selectedRole,
             email: email,
@@ -414,10 +430,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
   }
 
   List<Widget> _profileFormFieldWidgets(BuildContext context) {
+    final phoneEditable = widget.phone.trim().isEmpty;
     return [
       TextFormField(
-        initialValue: widget.phone,
-        readOnly: true,
+        controller: _phoneController,
+        readOnly: !phoneEditable,
+        keyboardType: phoneEditable ? TextInputType.phone : null,
+        textInputAction: phoneEditable ? TextInputAction.next : null,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           labelText: 'Teléfono',
@@ -429,10 +448,20 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
             borderSide: BorderSide.none,
           ),
         ),
+        validator: phoneEditable
+            ? (value) {
+                final digits = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+                if (digits.length < 9) {
+                  return 'Ingresa un número de celular válido';
+                }
+                return null;
+              }
+            : null,
       ),
       const SizedBox(height: 16),
       TextFormField(
         controller: _nameController,
+        readOnly: widget.prefilledName.trim().isNotEmpty,
         style: const TextStyle(color: Colors.white),
         textCapitalization: TextCapitalization.words,
         decoration: InputDecoration(
@@ -471,6 +500,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _clientEmailController,
+          readOnly: (widget.prefilledEmail?.trim().isNotEmpty ?? false),
           style: const TextStyle(color: Colors.white),
           keyboardType: TextInputType.emailAddress,
           decoration: InputDecoration(
@@ -850,11 +880,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthAuthenticated) {
-          if (state.user.role == 'driver') {
-            context.go('/dashboard');
-          } else {
-            context.go('/client-dashboard');
-          }
+          context.go(
+            '/welcome',
+            extra: {
+              'userName': state.user.fullName,
+              'isNewUser': true,
+            },
+          );
         }
         if (state is AuthError) {
           ScaffoldMessenger.of(context).showSnackBar(

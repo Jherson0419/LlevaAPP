@@ -1,3 +1,9 @@
+-- ⚠️ SUPERADO — NO EJECUTAR EN PRODUCCIÓN.
+-- Reemplazado por supabase/migrations/002_fix_profiles_rls.sql, que acota la
+-- política a la propia fila (id = auth.uid()) y agrega un trigger que protege
+-- is_approved/is_banned/*_status incluso dentro de la propia fila. Este archivo
+-- se conserva solo como referencia histórica de por qué existía el problema.
+--
 -- Ejecutar en Supabase → SQL Editor si al enviar la solicitud de conductor ves
 -- PostgrestException / 403 en la tabla profiles (RLS bloquea el UPDATE).
 --

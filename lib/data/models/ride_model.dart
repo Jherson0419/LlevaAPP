@@ -1,7 +1,7 @@
 import '../../domain/entities/ride_entity.dart';
 
 /// Modelo de datos que extiende RideEntity.
-/// 
+///
 /// Se encarga de la serialización/deserialización de datos
 /// que provienen de PostgreSQL (vía Supabase).
 class RideModel extends RideEntity {
@@ -25,10 +25,18 @@ class RideModel extends RideEntity {
     super.clientFirstName,
     super.clientCompletedTrips,
     super.clientPassengerRating,
+    super.clientProfilePicUrl,
+    super.driverFullName,
+    super.driverProfilePicUrl,
+    super.driverRating,
+    super.driverCompletedTrips,
+    super.driverCarModel,
+    super.driverCarBrand,
+    super.driverCarPlate,
   });
 
   /// Crea una instancia de RideModel desde un Map JSON.
-  /// 
+  ///
   /// Maneja la conversión segura de tipos numéricos y fechas
   /// que pueden venir como diferentes tipos desde PostgreSQL.
   /// Fila de Supabase con posibles nulos (viajes antiguos o incompletos).
@@ -80,6 +88,15 @@ class RideModel extends RideEntity {
       paymentMethod: _parsePaymentMethod(json['payment_method']),
       clientFirstName: json['client_first_name']?.toString() ?? '',
       clientCompletedTrips: _parseIntLoose(json['client_completed_trips']),
+      clientPassengerRating: _parseNullableDouble(json['passenger_rating']),
+      clientProfilePicUrl: json['client_profile_pic_url']?.toString(),
+      driverFullName: json['driver_full_name']?.toString(),
+      driverProfilePicUrl: json['driver_profile_pic_url']?.toString(),
+      driverRating: _parseNullableDouble(json['driver_rating']),
+      driverCompletedTrips: _parseIntLoose(json['driver_completed_trips']),
+      driverCarModel: json['driver_car_model']?.toString(),
+      driverCarBrand: json['driver_car_brand']?.toString(),
+      driverCarPlate: json['driver_car_plate']?.toString(),
     );
   }
 
@@ -138,6 +155,14 @@ class RideModel extends RideEntity {
       clientFirstName: json['client_first_name']?.toString() ?? '',
       clientCompletedTrips: _parseIntLoose(json['client_completed_trips']),
       clientPassengerRating: _parseNullableDouble(json['passenger_rating']),
+      clientProfilePicUrl: json['client_profile_pic_url']?.toString(),
+      driverFullName: json['driver_full_name']?.toString(),
+      driverProfilePicUrl: json['driver_profile_pic_url']?.toString(),
+      driverRating: _parseNullableDouble(json['driver_rating']),
+      driverCompletedTrips: _parseIntLoose(json['driver_completed_trips']),
+      driverCarModel: json['driver_car_model']?.toString(),
+      driverCarBrand: json['driver_car_brand']?.toString(),
+      driverCarPlate: json['driver_car_plate']?.toString(),
     );
   }
 
@@ -163,7 +188,7 @@ class RideModel extends RideEntity {
       'status': status,
       'offered_price': offeredPrice,
       'final_price': finalPrice,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': createdAt.toUtc().toIso8601String(),
       'payment_method': paymentMethod,
     };
 
@@ -177,11 +202,12 @@ class RideModel extends RideEntity {
   }
 
   /// Convierte un valor dinámico a double de forma segura.
-  /// 
+  ///
   /// Maneja casos donde PostgreSQL puede retornar int o double.
   static double _parseDouble(dynamic value) {
     if (value == null) {
-      throw ArgumentError('El valor no puede ser null para campos double requeridos');
+      throw ArgumentError(
+          'El valor no puede ser null para campos double requeridos');
     }
     if (value is double) {
       return value;
@@ -192,15 +218,17 @@ class RideModel extends RideEntity {
     if (value is String) {
       return double.parse(value);
     }
-    throw ArgumentError('No se puede convertir $value (${value.runtimeType}) a double');
+    throw ArgumentError(
+        'No se puede convertir $value (${value.runtimeType}) a double');
   }
 
   /// Convierte un valor dinámico a DateTime de forma segura.
-  /// 
+  ///
   /// Maneja diferentes formatos de fecha que pueden venir de PostgreSQL.
   static DateTime _parseDateTime(dynamic value) {
     if (value == null) {
-      throw ArgumentError('El valor no puede ser null para campos DateTime requeridos');
+      throw ArgumentError(
+          'El valor no puede ser null para campos DateTime requeridos');
     }
     if (value is DateTime) {
       return value;
@@ -216,6 +244,7 @@ class RideModel extends RideEntity {
         return DateTime.fromMillisecondsSinceEpoch(value);
       }
     }
-    throw ArgumentError('No se puede convertir $value (${value.runtimeType}) a DateTime');
+    throw ArgumentError(
+        'No se puede convertir $value (${value.runtimeType}) a DateTime');
   }
 }

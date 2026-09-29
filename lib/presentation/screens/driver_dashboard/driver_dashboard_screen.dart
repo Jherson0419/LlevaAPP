@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/passenger_name_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/custom_map_markers.dart';
 import '../../../core/utils/location_helper.dart';
-import '../../../core/utils/marker_helper.dart';
 import '../../../data/datasources/remote/directions_service.dart';
 import '../../../domain/entities/ride_entity.dart';
 import '../../bloc/auth/auth_bloc.dart';
@@ -30,7 +34,11 @@ class DriverDashboardScreen extends StatefulWidget {
 }
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+  static const Duration _requestExpiry = Duration(minutes: 15);
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ValueNotifier<int> _requestClockSec =
+      ValueNotifier<int>(DateTime.now().millisecondsSinceEpoch ~/ 1000);
+  Timer? _requestClockTimer;
 
   GoogleMapController? _mapController;
   String? _mapError;
@@ -44,11 +52,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   // Marcadores y polylines del mapa
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  int _negotiatingAnimToken = 0;
+  String? _lastNegotiatingAnimatedRideId;
   
   // Servicio de direcciones
   final DirectionsService _directionsService = DirectionsService();
 
-  // ignore: unused_field — asset cargado por requisito UI; el mapa usa myLocation para el propio vehículo
   BitmapDescriptor? _carIcon;
   BitmapDescriptor? _originIcon;
   BitmapDescriptor? _destIcon;
@@ -56,6 +65,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _requestClockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _requestClockSec.value = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<AuthBloc>().add(const RefreshProfileEvent());
@@ -63,6 +75,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       if (auth is AuthAuthenticated) {
         context.read<DriverStatsCubit>().loadTodayStats(auth.user.id);
         context.read<DriverWalletCubit>().loadWallet(auth.user.id);
+        context
+            .read<DriverStatusBloc>()
+            .add(RecoverDriverActiveRide(auth.user.id));
       }
       _loadCustomMapIcons(context);
     });
@@ -72,40 +87,54 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     BitmapDescriptor? car;
     BitmapDescriptor? origin;
     BitmapDescriptor? dest;
-    final originDestPx =
-        MarkerHelper.originDestIconWidthPx(MediaQuery.devicePixelRatioOf(context));
     try {
-      car = await MarkerHelper.getBytesFromAsset('assets/icons/car.png', 100);
+      car = await CustomMapMarkers.createDriverCarMarker();
     } catch (_) {}
     try {
-      origin = await MarkerHelper.getBytesFromAsset(
-        'assets/icons/origin.png',
-        originDestPx,
-      );
+      origin = await CustomMapMarkers.createOriginMarker();
     } catch (_) {}
     try {
-      dest = await MarkerHelper.getBytesFromAsset(
-        'assets/icons/dest.png',
-        originDestPx,
-      );
+      dest = await CustomMapMarkers.createDestMarker();
     } catch (_) {}
     if (!mounted) return;
     setState(() {
       _carIcon = car;
       _originIcon = origin;
       _destIcon = dest;
+      _upsertDriverLocationMarker();
     });
     _redrawActiveRouteIfAny();
+  }
+
+  void _upsertDriverLocationMarker() {
+    if (_currentPosition == null || _carIcon == null) return;
+    _markers.removeWhere((m) => m.markerId == const MarkerId('driver_location'));
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('driver_location'),
+        position: LatLng(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+        ),
+        icon: _carIcon!,
+        anchor: const Offset(0.5, 0.5),
+        zIndex: 1000,
+      ),
+    );
   }
 
   void _redrawActiveRouteIfAny() {
     if (!mounted) return;
     final s = context.read<DriverStatusBloc>().state;
-    if (s is DriverNegotiating) {
-      final r = s.activeRide;
+    if (s is DriverNegotiating || s is DriverWaitingForPassengerDecision) {
+      final r = s is DriverNegotiating
+          ? (s as DriverNegotiating).activeRide
+          : (s as DriverWaitingForPassengerDecision).activeRide;
       _showRouteOnMap(
         LatLng(r.originLat, r.originLng),
         LatLng(r.destLat, r.destLng),
+        animateNegotiatingEntry: true,
+        rideIdForAnimation: r.id,
       );
     } else if (s is DriverOnTrip) {
       final r = s.activeRide;
@@ -130,13 +159,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   void dispose() {
+    _requestClockTimer?.cancel();
+    _requestClockSec.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
   void _onMapCreated(GoogleMapController controller) async {
     _mapController = controller;
-    _setMapStyle();
+    await _setMapStyle();
     setState(() {
       _mapError = null;
     });
@@ -146,6 +177,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       final position = await LocationHelper.determinePosition();
       setState(() {
         _currentPosition = position;
+        _upsertDriverLocationMarker();
       });
 
       // Centrar el mapa en la ubicación actual
@@ -170,110 +202,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
-  void _setMapStyle() {
-    // Estilo oscuro para Google Maps
-    const darkMapStyle = '''
-    [
-      {
-        "elementType": "geometry",
-        "stylers": [{"color": "#212121"}]
-      },
-      {
-        "elementType": "labels.icon",
-        "stylers": [{"visibility": "off"}]
-      },
-      {
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#757575"}]
-      },
-      {
-        "elementType": "labels.text.stroke",
-        "stylers": [{"color": "#212121"}]
-      },
-      {
-        "featureType": "administrative",
-        "elementType": "geometry",
-        "stylers": [{"color": "#757575"}]
-      },
-      {
-        "featureType": "administrative.country",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#9e9e9e"}]
-      },
-      {
-        "featureType": "administrative.locality",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#bdbdbd"}]
-      },
-      {
-        "featureType": "poi",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#757575"}]
-      },
-      {
-        "featureType": "poi.park",
-        "elementType": "geometry",
-        "stylers": [{"color": "#181818"}]
-      },
-      {
-        "featureType": "poi.park",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#616161"}]
-      },
-      {
-        "featureType": "poi.park",
-        "elementType": "labels.text.stroke",
-        "stylers": [{"color": "#1b1b1b"}]
-      },
-      {
-        "featureType": "road",
-        "elementType": "geometry.fill",
-        "stylers": [{"color": "#2a2a2a"}]
-      },
-      {
-        "featureType": "road",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#8a8a8a"}]
-      },
-      {
-        "featureType": "road.arterial",
-        "elementType": "geometry",
-        "stylers": [{"color": "#373737"}]
-      },
-      {
-        "featureType": "road.highway",
-        "elementType": "geometry",
-        "stylers": [{"color": "#3c3c3c"}]
-      },
-      {
-        "featureType": "road.highway.controlled_access",
-        "elementType": "geometry",
-        "stylers": [{"color": "#4e4e4e"}]
-      },
-      {
-        "featureType": "road.local",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#616161"}]
-      },
-      {
-        "featureType": "transit",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#757575"}]
-      },
-      {
-        "featureType": "water",
-        "elementType": "geometry",
-        "stylers": [{"color": "#000000"}]
-      },
-      {
-        "featureType": "water",
-        "elementType": "labels.text.fill",
-        "stylers": [{"color": "#3d3d3d"}]
-      }
-    ]
-    ''';
-
-    _mapController?.setMapStyle(darkMapStyle);
+  Future<void> _setMapStyle() async {
+    try {
+      final style = await rootBundle.loadString('assets/map_style.json');
+      await _mapController?.setMapStyle(style);
+    } catch (_) {
+      // Si falla la carga, el mapa usa el estilo por defecto.
+    }
   }
 
   /// ETA aproximada en minutos (velocidad media 30 km/h).
@@ -281,43 +216,72 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     return (distanceKm / 30.0 * 60.0).ceil().clamp(1, 999);
   }
 
-  void _tryShowOriginInfoWindow() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _mapController == null) return;
-      try {
-        await _mapController!.showMarkerInfoWindow(const MarkerId('origin'));
-      } catch (_) {}
-    });
+  String _formatDistanceSmart(double km) {
+    if (km < 1) {
+      final meters = (km * 1000).round();
+      return '$meters m';
+    }
+    return '${km.toStringAsFixed(1)} km';
   }
 
   /// Muestra la ruta en el mapa con marcadores y polyline
   /// Obtiene la ruta real usando Google Maps Directions API
-  Future<void> _showRouteOnMap(LatLng origin, LatLng destination) async {
+  Future<void> _showRouteOnMap(
+    LatLng origin,
+    LatLng destination, {
+    bool animateNegotiatingEntry = false,
+    String? rideIdForAnimation,
+  }) async {
+    final shouldAnimateNegotiatingEntry =
+        animateNegotiatingEntry &&
+        rideIdForAnimation != null &&
+        _lastNegotiatingAnimatedRideId != rideIdForAnimation;
+    if (shouldAnimateNegotiatingEntry) {
+      _lastNegotiatingAnimatedRideId = rideIdForAnimation;
+    }
     final kmOriginToDest =
         LocationHelper.calculateDistance(origin, destination);
-    final minOriginToDest = _etaMinutesFromKm(kmOriginToDest);
 
+    LatLng? driver;
     double? kmDriverToOrigin;
-    int? minDriverToOrigin;
     if (_currentPosition != null) {
-      final driver = LatLng(
+      driver = LatLng(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
       );
       kmDriverToOrigin = LocationHelper.calculateDistance(driver, origin);
-      minDriverToOrigin = _etaMinutesFromKm(kmDriverToOrigin);
     }
 
-    final originTitle = kmDriverToOrigin != null && minDriverToOrigin != null
-        ? 'A $minDriverToOrigin min (${kmDriverToOrigin.toStringAsFixed(1)} km)'
+    final originTitle = kmDriverToOrigin != null
+        ? '${_etaMinutesFromKm(kmDriverToOrigin)} min'
         : 'Recojo';
+    final originDistanceLine2 = kmDriverToOrigin != null
+        ? _formatDistanceSmart(kmDriverToOrigin)
+        : '---';
 
-    final destTitle =
-        '$minOriginToDest min (${kmOriginToDest.toStringAsFixed(1)} km)';
+    final totalKmToDestination =
+        kmOriginToDest + (kmDriverToOrigin ?? 0);
+    final destTitle = '${_etaMinutesFromKm(totalKmToDestination)} min';
+    final destDistanceLine2 = _formatDistanceSmart(totalKmToDestination);
+    BitmapDescriptor? originDistanceBadge;
+    BitmapDescriptor? destinationDistanceBadge;
+    try {
+      originDistanceBadge = await CustomMapMarkers.createDistanceBadgeMarker(
+        line1: originTitle,
+        line2: originDistanceLine2,
+      );
+    } catch (_) {}
+    try {
+      destinationDistanceBadge = await CustomMapMarkers.createDistanceBadgeMarker(
+        line1: destTitle,
+        line2: destDistanceLine2,
+      );
+    } catch (_) {}
 
     setState(() {
       _markers.clear();
       _polylines.clear();
+      _upsertDriverLocationMarker();
 
       _markers.add(
         Marker(
@@ -344,9 +308,42 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
         ),
       );
-    });
 
-    _tryShowOriginInfoWindow();
+      if (originDistanceBadge != null) {
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('origin_distance_badge'),
+            position: origin,
+            icon: originDistanceBadge,
+            anchor: const Offset(0.5, 1.0),
+            zIndex: 998,
+          ),
+        );
+      }
+      if (destinationDistanceBadge != null) {
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('destination_distance_badge'),
+            position: destination,
+            icon: destinationDistanceBadge,
+            anchor: const Offset(0.5, 1.0),
+            zIndex: 998,
+          ),
+        );
+      }
+
+      if (driver != null) {
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('driver_to_origin'),
+            points: [driver, origin],
+            color: const Color(0xFF32D74B),
+            width: 4,
+            geodesic: true,
+          ),
+        );
+      }
+    });
 
     // Intentar obtener la ruta real de Google Maps
     try {
@@ -356,31 +353,86 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         AppConstants.googleMapsApiKey,
       );
 
-      // Si se obtuvo la ruta exitosamente, dibujarla
       if (routePoints.isNotEmpty) {
-        setState(() {
-          _polylines.add(
-            Polyline(
-              polylineId: const PolylineId('route'),
-              points: routePoints,
-              color: const Color(0xFF00D4FF), // Azul eléctrico de la app
-              width: 5,
-              geodesic: true,
-            ),
-          );
-        });
-
-        // Ajustar cámara para mostrar toda la ruta
-        _adjustCameraToFitRoute(routePoints);
+        if (shouldAnimateNegotiatingEntry) {
+          await _animateNegotiatingRouteProgress(origin, routePoints);
+        } else {
+          setState(() {
+            _polylines.add(
+              Polyline(
+                polylineId: const PolylineId('route'),
+                points: routePoints,
+                color: const Color(0xFF00D4FF), // Azul eléctrico de la app
+                width: 5,
+                geodesic: true,
+              ),
+            );
+          });
+          _adjustCameraToFitRoute(routePoints);
+        }
       } else {
-        // Si no hay puntos, usar línea recta como fallback
         _drawStraightLine(origin, destination);
       }
     } catch (e) {
-      // Si hay error, usar línea recta como fallback
       print('Error al obtener la ruta: $e');
       _drawStraightLine(origin, destination);
     }
+  }
+
+  Future<void> _animateNegotiatingRouteProgress(
+    LatLng origin,
+    List<LatLng> routePoints,
+  ) async {
+    if (_mapController == null || routePoints.length < 2) {
+      _drawStraightLine(origin, routePoints.isNotEmpty ? routePoints.last : origin);
+      return;
+    }
+
+    final animToken = ++_negotiatingAnimToken;
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: origin, zoom: 16.7),
+        ),
+      );
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 260));
+    if (!mounted || animToken != _negotiatingAnimToken) return;
+
+    const totalFrames = 24;
+    final step = (routePoints.length / totalFrames).ceil().clamp(1, routePoints.length);
+    for (int i = step; i <= routePoints.length; i += step) {
+      if (!mounted || animToken != _negotiatingAnimToken) return;
+      final end = i > routePoints.length ? routePoints.length : i;
+      final partial = routePoints.sublist(0, end);
+      final progress = end / routePoints.length;
+      final zoom = 16.7 - (progress * 2.6);
+
+      setState(() {
+        _polylines.removeWhere((p) => p.polylineId == const PolylineId('route'));
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('route'),
+            points: partial,
+            color: const Color(0xFF00D4FF),
+            width: 5,
+            geodesic: true,
+          ),
+        );
+      });
+
+      try {
+        await _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: origin, zoom: zoom.clamp(13.7, 16.7)),
+          ),
+        );
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 120));
+    }
+
+    if (!mounted || animToken != _negotiatingAnimToken) return;
+    _adjustCameraToFitRoute(routePoints);
   }
 
   /// Dibuja una línea recta como fallback cuando la API falla
@@ -463,6 +515,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     setState(() {
       _markers.clear();
       _polylines.clear();
+      _upsertDriverLocationMarker();
     });
   }
 
@@ -488,6 +541,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         final position = await LocationHelper.determinePosition();
         setState(() {
           _currentPosition = position;
+          _upsertDriverLocationMarker();
         });
         await _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
@@ -505,6 +559,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.of(context);
     final drawerWidth = MediaQuery.sizeOf(context).width * 0.78;
     final authState = context.watch<AuthBloc>().state;
     return BlocBuilder<DriverStatusBloc, DriverStatusState>(
@@ -513,12 +568,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             _hasRejectedDocuments(authState.user);
         final showRejectedBanner =
             hasRejectedDocuments && blocState is DriverOffline;
-        final immersiveMode = blocState is DriverNegotiating;
+        final immersiveMode = blocState is DriverNegotiating ||
+            blocState is DriverWaitingForPassengerDecision;
         final bottomNavHeight = immersiveMode ? 0.0 : 56.0;
 
         return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AppTheme.darkBackground,
+      backgroundColor: colors.background,
       drawer: Drawer(
         width: drawerWidth,
         backgroundColor: const Color(0xFF0A0A0A),
@@ -549,7 +605,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         ],
         child: BlocConsumer<DriverStatusBloc, DriverStatusState>(
           listener: (context, state) {
-            if (state is DriverOnline) {
+            if (state is DriverRequestExpired) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(state.message),
+                  backgroundColor: AppTheme.warningOrange,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            } else if (state is DriverOnline) {
               // Limpiar mapa y centrar en ubicación actual
               _clearMap();
               _centerMapOnCurrentLocation();
@@ -570,14 +634,24 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   duration: const Duration(seconds: 2),
                 ),
               );
-            } else if (state is DriverNegotiating) {
-              // Mostrar ruta en el mapa cuando se está negociando
-              final origin = LatLng(state.activeRide.originLat, state.activeRide.originLng);
-              final destination = LatLng(state.activeRide.destLat, state.activeRide.destLng);
-              _showRouteOnMap(origin, destination);
+            } else if (state is DriverNegotiating ||
+                state is DriverWaitingForPassengerDecision) {
+              final r = state is DriverNegotiating
+                  ? (state as DriverNegotiating).activeRide
+                  : (state as DriverWaitingForPassengerDecision).activeRide;
+              final origin = LatLng(r.originLat, r.originLng);
+              final destination = LatLng(r.destLat, r.destLng);
+              _showRouteOnMap(
+                origin,
+                destination,
+                animateNegotiatingEntry: true,
+                rideIdForAnimation: r.id,
+              );
             } else if (state is DriverOnTrip ||
                 state is DriverArrivedAtPickup ||
                 state is DriverTripInProgress) {
+              _lastNegotiatingAnimatedRideId = null;
+              _negotiatingAnimToken++;
               final ride = state is DriverOnTrip
                   ? state.activeRide
                   : state is DriverArrivedAtPickup
@@ -586,6 +660,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               final origin = LatLng(ride.originLat, ride.originLng);
               final destination = LatLng(ride.destLat, ride.destLng);
               _showRouteOnMap(origin, destination);
+            } else {
+              _lastNegotiatingAnimatedRideId = null;
+              _negotiatingAnimToken++;
             }
           },
           builder: (context, state) {
@@ -599,16 +676,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.map_outlined,
                                 size: 64,
-                                color: AppTheme.darkTextSecondary,
+                                color: colors.textSecondary,
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 'Mapa no disponible',
                                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                      color: AppTheme.darkText,
+                                      color: colors.textPrimary,
                                     ),
                               ),
                               const SizedBox(height: 8),
@@ -640,7 +717,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                            zoom: AppConstants.defaultZoom,
                          ),
                          mapType: MapType.normal,
-                         myLocationEnabled: true,
+                         myLocationEnabled: false,
                          myLocationButtonEnabled: false,
                          zoomControlsEnabled: false,
                          mapToolbarEnabled: false,
@@ -651,8 +728,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                          },
                        ),
 
-                if (state is DriverNegotiating &&
-                    state.awaitingPassengerResponse)
+                if (state is DriverWaitingForPassengerDecision)
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withValues(alpha: 0.6),
@@ -660,7 +736,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 28),
                         child: Text(
-                          'Se está ofreciendo tu tarifa de S/ ${state.currentOffer.toStringAsFixed(2)},\nesperando respuesta del cliente...',
+                          'Se está ofreciendo tu tarifa de S/ ${state.submittedPrice.toStringAsFixed(2)},\nesperando respuesta del cliente...',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
@@ -673,7 +749,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                   ),
                 
-                // Toggle de disponibilidad en la parte superior
+                // Vistas de las pestañas (superpuestas sobre el mapa)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: _buildTabView(context, state, bottomNavHeight),
+                ),
+
+                // Toggle de disponibilidad en la parte superior (siempre por encima)
                 SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -693,38 +775,57 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   ),
                 ),
 
-                // FAB del menú en la parte superior izquierda (siempre visible)
-                SafeArea(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 16, left: 16),
-                      child: FloatingActionButton(
-                        onPressed: () =>
-                            _scaffoldKey.currentState?.openDrawer(),
-                        backgroundColor: AppTheme.darkSurface,
-                        mini: true,
-                        child: const Icon(
-                          Icons.more_vert,
-                          color: AppTheme.darkText,
+                // FAB del menú en la parte superior izquierda (oculto en negociación / espera)
+                if (state is! DriverNegotiating &&
+                    state is! DriverWaitingForPassengerDecision)
+                  SafeArea(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 16, left: 16),
+                        child: FloatingActionButton(
+                          onPressed: () =>
+                              _scaffoldKey.currentState?.openDrawer(),
+                          backgroundColor: colors.surface,
+                          mini: true,
+                          child: Icon(
+                            Icons.more_vert,
+                            color: colors.textPrimary,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                // Vistas de las pestañas (superpuestas sobre el mapa)
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: _buildTabView(context, state, bottomNavHeight),
-                ),
-
-                // Tarjeta de negociación (si está negociando)
+                // Tarjeta de negociación o espera del pasajero
                 if (state is DriverNegotiating)
                   Align(
                     alignment: Alignment.bottomCenter,
                     child: DriverNegotiatingCard(
-                      state: state,
+                      activeRide: state.activeRide,
+                      currentOffer: state.currentOffer,
+                      isWaitingOnPassenger: false,
+                      distanceToPickupKm: _currentPosition != null
+                          ? LocationHelper.calculateDistance(
+                              LatLng(
+                                _currentPosition!.latitude,
+                                _currentPosition!.longitude,
+                              ),
+                              LatLng(
+                                state.activeRide.originLat,
+                                state.activeRide.originLng,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                if (state is DriverWaitingForPassengerDecision)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: DriverNegotiatingCard(
+                      activeRide: state.activeRide,
+                      currentOffer: state.submittedPrice,
+                      isWaitingOnPassenger: true,
                       distanceToPickupKm: _currentPosition != null
                           ? LocationHelper.calculateDistance(
                               LatLng(
@@ -759,10 +860,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final colors = AppTheme.of(context);
     return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.darkSurface,
-        boxShadow: [
+      decoration: BoxDecoration(
+        color: colors.surface,
+        boxShadow: const [
           BoxShadow(
             color: Colors.black,
             blurRadius: 10,
@@ -777,7 +879,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             _currentTabIndex = index;
           });
         },
-        backgroundColor: AppTheme.darkSurface,
+        backgroundColor: colors.surface,
         selectedItemColor: AppTheme.primaryBlue,
         unselectedItemColor: Colors.grey[400],
         type: BottomNavigationBarType.fixed,
@@ -806,7 +908,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     DriverStatusState state,
     double bottomBarHeight,
   ) {
-    if (state is DriverNegotiating) {
+    if (state is DriverNegotiating || state is DriverWaitingForPassengerDecision) {
       return const SizedBox.shrink();
     }
 
@@ -823,6 +925,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Widget _buildRequestsView(BuildContext context, DriverStatusState state, double bottomBarHeight) {
+    final colors = AppTheme.of(context);
     if (state is DriverOffline) {
       return Container(
         margin: EdgeInsets.only(bottom: bottomBarHeight),
@@ -830,7 +933,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AppTheme.darkSurface.withOpacity(0.95),
+            color: colors.surface.withOpacity(0.95),
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -846,13 +949,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               Icon(
                 Icons.wifi_off,
                 size: 48,
-                color: AppTheme.darkTextSecondary,
+                color: colors.textSecondary,
               ),
               const SizedBox(height: 16),
               Text(
                 'Conéctate para ver solicitudes',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppTheme.darkText,
+                      color: colors.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                 textAlign: TextAlign.center,
@@ -864,11 +967,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
 
     if (state is DriverOnline) {
+      final mediaQuery = MediaQuery.of(context);
+      const topGapBelowHeader = 10.0;
+      const headerOverlayHeight = 140.0;
+      final reservedTopSpace =
+          mediaQuery.padding.top + headerOverlayHeight + topGapBelowHeader;
+      final maxPanelHeight = mediaQuery.size.height - reservedTopSpace;
       return Container(
-        height: MediaQuery.of(context).size.height * 0.4,
-        margin: EdgeInsets.only(bottom: bottomBarHeight),
+        height: maxPanelHeight > 0
+            ? maxPanelHeight
+            : mediaQuery.size.height * 0.4,
+        margin: EdgeInsets.zero,
         decoration: BoxDecoration(
-          color: AppTheme.darkSurface.withOpacity(0.95),
+          color: colors.surface.withOpacity(0.95),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           boxShadow: [
             BoxShadow(
@@ -899,7 +1010,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   Text(
                     'Solicitudes cercanas',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: AppTheme.darkText,
+                          color: colors.textPrimary,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -912,56 +1023,59 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             
             // Lista de solicitudes
             Expanded(
-              child: BlocBuilder<DriverStatusBloc, DriverStatusState>(
-                builder: (context, state) {
-                  if (state is DriverOnline) {
-                    final rides = state.availableRides;
-                    
-                    if (rides.isEmpty) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.search_off,
-                                size: 64,
-                                color: AppTheme.darkTextSecondary,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No hay solicitudes cercanas',
-                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: AppTheme.darkTextSecondary,
-                                    ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
+              child: ValueListenableBuilder<int>(
+                valueListenable: _requestClockSec,
+                builder: (_, nowSec, __) {
+                  final now = DateTime.fromMillisecondsSinceEpoch(
+                    nowSec * 1000,
+                    isUtc: true,
+                  );
+                  final rides = state.availableRides
+                      .where((r) => !_isRideExpired(r, now))
+                      .toList(growable: false);
+                  if (rides.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 64,
+                              color: colors.textSecondary,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No hay solicitudes cercanas',
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
-                      );
-                    }
-                    
-                    return ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: rides.length,
-                      itemBuilder: (context, index) {
-                        final ride = rides[index];
-                        return _RideRequestItem(
-                          ride: ride,
-                          currentPosition: _currentPosition,
-                          onTap: () {
-                            context.read<DriverStatusBloc>().add(
-                                  ReceiveRequest(ride),
-                                );
-                          },
-                        );
-                      },
+                      ),
                     );
                   }
-                  
-                  return const SizedBox.shrink();
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: rides.length,
+                    itemBuilder: (context, index) {
+                      final ride = rides[index];
+                      return _RideRequestItem(
+                        ride: ride,
+                        currentPosition: _currentPosition,
+                        remainingTime: _remainingRequestTime(ride, now),
+                        elapsedTime: _elapsedRequestTime(ride, now),
+                        onTap: () {
+                          context.read<DriverStatusBloc>().add(
+                                ReceiveRequest(ride),
+                              );
+                        },
+                      );
+                    },
+                  );
                 },
               ),
             ),
@@ -981,13 +1095,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Widget _buildHotZonesView(BuildContext context, double bottomBarHeight) {
+    final colors = AppTheme.of(context);
     return Container(
       margin: EdgeInsets.only(bottom: bottomBarHeight),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          color: AppTheme.darkSurface.withOpacity(0.95),
+          color: colors.surface.withOpacity(0.95),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -1009,7 +1124,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             Text(
               'Actualizando zonas de alta demanda...',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.darkText,
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
             ),
@@ -1023,6 +1138,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     BuildContext context,
     DriverStatusState state,
   ) {
+    final colors = AppTheme.of(context);
     final RideEntity ride;
     final String title;
     final Widget actionButton;
@@ -1115,7 +1231,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 56.0),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       decoration: BoxDecoration(
-        color: AppTheme.darkSurface.withOpacity(0.96),
+        color: colors.surface.withOpacity(0.96),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
@@ -1142,20 +1258,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppTheme.darkText,
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.person_outline, size: 18, color: AppTheme.darkTextSecondary),
+                Icon(Icons.person_outline, size: 18, color: colors.textSecondary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Pasajero: $passengerRef',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.darkTextSecondary,
+                          color: colors.textSecondary,
                         ),
                   ),
                 ),
@@ -1174,7 +1290,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   child: Text(
                     ride.originName,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.darkText,
+                          color: colors.textPrimary,
                         ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1187,10 +1303,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Text(
+                Text(
                   'Tarifa acordada:',
                   style: TextStyle(
-                    color: AppTheme.darkTextSecondary,
+                    color: colors.textSecondary,
                     fontSize: 14,
                   ),
                 ),
@@ -1225,7 +1341,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     final isInTrip = state is DriverOnTrip ||
         state is DriverArrivedAtPickup ||
         state is DriverTripInProgress;
-    final isNegotiating = state is DriverNegotiating;
+    final isNegotiating = state is DriverNegotiating ||
+        state is DriverWaitingForPassengerDecision;
     final isAvailableOnline =
         state is DriverOnline || isNegotiating || isInTrip;
 
@@ -1242,7 +1359,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     String chipLabel;
     if (isNegotiating) {
-      chipLabel = 'Negociando';
+      chipLabel = state is DriverWaitingForPassengerDecision
+          ? 'Esperando al pasajero'
+          : 'Negociando';
     } else if (isInTrip) {
       chipLabel = 'En viaje';
     } else if (state is DriverOnline) {
@@ -1330,7 +1449,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         isRejected(user.propertyCardStatus);
   }
 
+  bool _isRideExpired(RideEntity ride, DateTime nowUtc) {
+    return nowUtc.difference(ride.createdAt.toUtc()) >= _requestExpiry;
+  }
+
+  Duration _remainingRequestTime(RideEntity ride, DateTime nowUtc) {
+    final elapsed = nowUtc.difference(ride.createdAt.toUtc());
+    final remain = _requestExpiry - elapsed;
+    return remain.isNegative ? Duration.zero : remain;
+  }
+
+  /// Tiempo desde la creación de la solicitud (0 → 15 min), inverso al contador del pasajero.
+  Duration _elapsedRequestTime(RideEntity ride, DateTime nowUtc) {
+    final elapsed = nowUtc.difference(ride.createdAt.toUtc());
+    if (elapsed.isNegative) return Duration.zero;
+    return elapsed > _requestExpiry ? _requestExpiry : elapsed;
+  }
+
   Widget _buildRejectedDocumentsBanner(BuildContext context) {
+    final colors = AppTheme.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1345,11 +1482,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         children: [
           const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               'Tienes documentos rechazados. Corrígelos para conectarte.',
               style: TextStyle(
-                color: AppTheme.darkText,
+                color: colors.textPrimary,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),
@@ -1367,6 +1504,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Widget _buildStatsWidget() {
     return BlocBuilder<DriverStatsCubit, DriverStatsState>(
       builder: (context, statsState) {
+        final colors = AppTheme.of(context);
         final earningsText = statsState.isLoading
             ? '...'
             : '${AppConstants.currencySymbol} ${statsState.earnings.toStringAsFixed(2)}';
@@ -1375,7 +1513,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         return Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AppTheme.darkSurface.withOpacity(0.95),
+            color: colors.surface.withOpacity(0.95),
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
@@ -1397,7 +1535,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               Container(
                 width: 1,
                 height: 40,
-                color: AppTheme.darkTextSecondary.withOpacity(0.3),
+                color: colors.textSecondary.withOpacity(0.3),
               ),
               _buildStatItem(
                 icon: Icons.directions_car,
@@ -1484,49 +1622,31 @@ _RideRequestChipPalette _paymentChipPaletteFor(String paymentMethod) {
   }
 }
 
-_RideRequestChipPalette _serviceTagChipPaletteFor(String tag) {
-  final n = tag.toLowerCase();
-  if (n.contains('más de 4') ||
-      n.contains('mas de 4') ||
-      n.contains('4 pasajeros')) {
-    return const _RideRequestChipPalette(
-      fill: Color(0xFFE65100),
-      border: Color(0xFFFFB74D),
-      label: Colors.white,
+Widget _passengerAvatarOrPlaceholder(String? url, {required double size}) {
+  final pic = url?.trim();
+  if (pic != null && pic.isNotEmpty) {
+    return Image.network(
+      pic,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _passengerAvatarPlaceholder(size),
     );
   }
-  if (n.contains('xl') || n.contains('6 pax')) {
-    return const _RideRequestChipPalette(
-      fill: Color(0xFF4527A0),
-      border: Color(0xFFB39DDB),
-      label: Colors.white,
-    );
-  }
-  if (n.contains('confort')) {
-    return const _RideRequestChipPalette(
-      fill: Color(0xFFF9A825),
-      border: Color(0xFFFFEE58),
-      label: Color(0xFF3E2723),
-    );
-  }
-  if (n.contains('silla') || n.contains('bebé') || n.contains('bebe')) {
-    return const _RideRequestChipPalette(
-      fill: Color(0xFFC2185B),
-      border: Color(0xFFF48FB1),
-      label: Colors.white,
-    );
-  }
-  if (n.contains('mascota')) {
-    return const _RideRequestChipPalette(
-      fill: Color(0xFF5D4037),
-      border: Color(0xFFD7CCC8),
-      label: Colors.white,
-    );
-  }
-  return const _RideRequestChipPalette(
-    fill: Color(0xFF37474F),
-    border: Color(0xFF90A4AE),
-    label: Color(0xFFECEFF1),
+  return _passengerAvatarPlaceholder(size);
+}
+
+Widget _passengerAvatarPlaceholder(double size) {
+  return Container(
+    width: size,
+    height: size,
+    color: AppTheme.darkSurfaceElevated,
+    alignment: Alignment.center,
+    child: Icon(
+      Icons.person,
+      color: AppTheme.darkTextSecondary,
+      size: size * 0.55,
+    ),
   );
 }
 
@@ -1534,17 +1654,22 @@ _RideRequestChipPalette _serviceTagChipPaletteFor(String tag) {
 class _RideRequestItem extends StatelessWidget {
   final RideEntity ride;
   final Position? currentPosition;
+  final Duration remainingTime;
+  final Duration elapsedTime;
   final VoidCallback onTap;
 
   const _RideRequestItem({
     required this.ride,
     this.currentPosition,
+    required this.remainingTime,
+    required this.elapsedTime,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    const cardBg = Color(0xFF1A1A1A);
+    final colors = AppTheme.of(context);
+    final cardBg = colors.surface;
     const cyanBorder = Color(0xFF00D4FF);
 
     final originLatLng = LatLng(ride.originLat, ride.originLng);
@@ -1561,9 +1686,9 @@ class _RideRequestItem extends StatelessWidget {
         ? 'A ${distanceFromDriverKm.toStringAsFixed(1)} km de ti'
         : 'A — km de ti';
 
-    final firstName = ride.clientFirstName.trim().isEmpty
-        ? 'Pasajero'
-        : ride.clientFirstName.trim();
+    final first =
+        passengerFirstNameFromFullName(ride.clientFirstName.trim());
+    final firstName = first.isEmpty ? 'Pasajero' : first;
 
     final pm = ride.paymentMethod.toLowerCase().trim();
     final bool isYape = pm == 'yape';
@@ -1576,6 +1701,12 @@ class _RideRequestItem extends StatelessWidget {
         destParts.addressLine.trim().isEmpty ? '—' : destParts.addressLine;
 
     final payChip = _paymentChipPaletteFor(ride.paymentMethod);
+    final elapsedSecs = elapsedTime.inSeconds.clamp(0, 15 * 60);
+    final emins =
+        (elapsedSecs ~/ 60).toString().padLeft(2, '0');
+    final esecs =
+        (elapsedSecs % 60).toString().padLeft(2, '0');
+    final urgent = remainingTime <= const Duration(minutes: 2);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1606,13 +1737,10 @@ class _RideRequestItem extends StatelessWidget {
                           shape: BoxShape.circle,
                           border: Border.all(color: cyanBorder, width: 1.5),
                         ),
-                        child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: AppTheme.darkSurfaceElevated,
-                          child: const Icon(
-                            Icons.person,
-                            color: AppTheme.darkTextSecondary,
-                            size: 22,
+                        child: ClipOval(
+                          child: _passengerAvatarOrPlaceholder(
+                            ride.clientProfilePicUrl,
+                            size: 40,
                           ),
                         ),
                       ),
@@ -1622,8 +1750,8 @@ class _RideRequestItem extends StatelessWidget {
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.darkText,
+                        style: TextStyle(
+                          color: colors.textPrimary,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1652,6 +1780,31 @@ class _RideRequestItem extends StatelessWidget {
                           fontSize: 11,
                           color: Colors.grey.shade500,
                           fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: urgent
+                              ? AppTheme.errorRed.withValues(alpha: 0.2)
+                              : AppTheme.warningOrange.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: urgent ? AppTheme.errorRed : AppTheme.warningOrange,
+                          ),
+                        ),
+                        child: Text(
+                          '$emins:$esecs',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: urgent ? AppTheme.errorRed : AppTheme.warningOrange,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -1697,8 +1850,8 @@ class _RideRequestItem extends StatelessWidget {
                               ride.originName,
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.darkText,
+                              style: TextStyle(
+                                color: colors.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -1724,8 +1877,8 @@ class _RideRequestItem extends StatelessWidget {
                               destLine,
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.darkText,
+                              style: TextStyle(
+                                color: colors.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 height: 1.25,
@@ -1735,122 +1888,41 @@ class _RideRequestItem extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: payChip.fill.withValues(alpha: 0.88),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: payChip.border,
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  (isYape || isPlin)
-                                      ? Icons.qr_code
-                                      : Icons.attach_money,
-                                  size: 12,
-                                  color: payChip.label.withValues(alpha: 0.95),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  paymentLabel,
-                                  style: TextStyle(
-                                    color: payChip.label,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (destParts.serviceTags.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                alignment: WrapAlignment.start,
-                                children: destParts.serviceTags
-                                    .map(
-                                      (t) {
-                                        final pal =
-                                            _serviceTagChipPaletteFor(t);
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: pal.fill
-                                                .withValues(alpha: 0.88),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            border: Border.all(
-                                              color: pal.border,
-                                              width: 1.2,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            t,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: pal.label,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (destParts.notes != null &&
-                          destParts.notes!.trim().isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          destParts.notes!.trim(),
-                          style: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 12,
-                            height: 1.35,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: payChip.fill.withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: payChip.border,
+                            width: 1.2,
                           ),
                         ),
-                      ],
-                      if (ride.clientPassengerRating != null) ...[
-                        const SizedBox(height: 8),
-                        Row(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.star_rounded,
-                              size: 18,
-                              color: Colors.amber.shade600,
+                              (isYape || isPlin)
+                                  ? Icons.qr_code
+                                  : Icons.attach_money,
+                              size: 12,
+                              color: payChip.label.withValues(alpha: 0.95),
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              ride.clientPassengerRating!
-                                  .toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: AppTheme.darkText,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+                              paymentLabel,
+                              style: TextStyle(
+                                color: payChip.label,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),

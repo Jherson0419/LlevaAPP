@@ -1,0 +1,47 @@
+workflows:
+  ios-release:
+    name: Lleva iOS - TestFlight
+    max_build_duration: 60
+    environment:
+      flutter: 3.38.5
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: pe.lleva.app
+      vars:
+        BUNDLE_ID: "pe.lleva.app"
+        APP_STORE_APPLE_ID: "6817361943"
+      groups:
+        - lleva_secrets
+    scripts:
+      - name: Set up .env file
+        script: |
+          cat > .env << EOF
+          SUPABASE_URL=$SUPABASE_URL
+          SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+          GOOGLE_MAPS_KEY=$GOOGLE_MAPS_KEY
+          GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID
+          SUPABASE_REDIRECT_URL=$SUPABASE_REDIRECT_URL
+          REVERSED_CLIENT_ID=$REVERSED_CLIENT_ID
+          EOF
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+      - name: Flutter build IPA
+        script: |
+          flutter build ipa \
+            --release \
+            --dart-define-from-file=.env \
+            --export-options-plist=$CM_EXPORT_OPTIONS_PLIST
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false

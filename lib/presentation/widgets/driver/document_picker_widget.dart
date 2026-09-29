@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/document_review_status.dart';
+import '../common/signed_remote_image.dart';
 
 /// Selector de imagen con vista previa para documentos del conductor.
 class DocumentPickerWidget extends StatelessWidget {
@@ -18,16 +19,23 @@ class DocumentPickerWidget extends StatelessWidget {
     this.isEditable = true,
     this.onBlockedTap,
     this.showStatus = true,
+    this.guidanceMessage,
   });
 
   final String label;
   final File? file;
   final ValueChanged<File?> onFileChanged;
+
+  /// URL pública (foto de perfil) o path de Storage privado (documentos de
+  /// identidad) — [SignedRemoteImage] resuelve ambos casos.
   final String? remoteImageUrl;
   final DocumentReviewStatus status;
   final bool isEditable;
   final VoidCallback? onBlockedTap;
   final bool showStatus;
+
+  /// Consejo breve mostrado bajo el selector (p. ej. cómo encuadrar la foto).
+  final String? guidanceMessage;
 
   static final _picker = ImagePicker();
 
@@ -42,8 +50,20 @@ class DocumentPickerWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Asegúrate de capturar una imagen clara, bien iluminada y sin reflejos.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.darkTextSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
             ListTile(
-              leading: const Icon(Icons.photo_library, color: AppTheme.primaryBlue),
+              leading:
+                  const Icon(Icons.photo_library, color: AppTheme.primaryBlue),
               title: const Text(
                 'Galería',
                 style: TextStyle(color: AppTheme.darkText),
@@ -51,7 +71,8 @@ class DocumentPickerWidget extends StatelessWidget {
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
             ListTile(
-              leading: const Icon(Icons.camera_alt, color: AppTheme.primaryBlue),
+              leading:
+                  const Icon(Icons.camera_alt, color: AppTheme.primaryBlue),
               title: const Text(
                 'Cámara',
                 style: TextStyle(color: AppTheme.darkText),
@@ -60,7 +81,8 @@ class DocumentPickerWidget extends StatelessWidget {
             ),
             if (file != null)
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: AppTheme.errorRed),
+                leading:
+                    const Icon(Icons.delete_outline, color: AppTheme.errorRed),
                 title: const Text(
                   'Quitar foto',
                   style: TextStyle(color: AppTheme.errorRed),
@@ -197,12 +219,7 @@ class DocumentPickerWidget extends StatelessWidget {
                   : hasRemoteImage
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(14),
-                          child: Image.network(
-                            remoteImageUrl!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                          ),
+                          child: SignedRemoteImage(value: remoteImageUrl!),
                         )
                       : const Center(
                           child: Icon(
@@ -214,6 +231,31 @@ class DocumentPickerWidget extends StatelessWidget {
             ),
           ),
         ),
+        if (guidanceMessage != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: AppTheme.primaryBlue,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    guidanceMessage!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.darkTextSecondary,
+                    ),
+                    softWrap: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

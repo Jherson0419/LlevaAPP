@@ -1,4 +1,5 @@
 import '../entities/ride_entity.dart';
+import '../entities/ride_offer_entity.dart';
 
 /// Contrato abstracto para el repositorio de Viajes (Rides).
 /// 
@@ -16,6 +17,25 @@ abstract class RideRepository {
   /// Escucha en tiempo real los cambios de un viaje concreto.
   Stream<RideEntity> subscribeToRide(String rideId);
 
+  /// Obtiene un viaje puntual por id para validar estado actual.
+  Future<RideEntity?> getRideById(String rideId);
+
+  /// Obtiene el viaje activo del cliente si sigue en curso de asignación.
+  /// Considera estados recuperables para rehidratar UI (p. ej. searching/accepted).
+  Future<RideEntity?> getActiveRideByClientId(String clientId);
+
+  /// Obtiene el viaje activo del conductor si ya tiene uno asignado/en curso.
+  Future<RideEntity?> getActiveRideByDriverId(String driverId);
+
+  /// Acepta un viaje en backend ERP con validación estricta de estado.
+  ///
+  /// Debe lanzar [RideRequestExpiredException] cuando el backend responde 409
+  /// por solicitud expirada/cancelada.
+  Future<RideEntity> acceptRide({
+    required String rideId,
+    required String driverId,
+  });
+
   /// Obtiene un stream de solicitudes de viaje cercanas en tiempo real.
   /// 
   /// [lat] - Latitud del punto de referencia.
@@ -32,6 +52,12 @@ abstract class RideRepository {
     double lng,
     double radiusInKm,
   );
+
+  /// Marca el viaje como cancelado en la tabla `rides` (no elimina el registro).
+  ///
+  /// Actualiza la columna `status` a `'cancelled'` para que el servidor pueda
+  /// archivar el viaje al historial según las reglas configuradas.
+  Future<void> cancelRide(String rideId);
 
   /// Actualiza el estado de un viaje existente.
   ///
@@ -59,4 +85,69 @@ abstract class RideRepository {
 
   /// Historial de viajes del usuario según rol (`client` | `driver`).
   Future<List<RideEntity>> getRideHistory(String userId, String role);
+
+  /// Ofertas de conductores para un viaje en `searching` (tiempo real).
+  ///
+  /// Si [pendingOnly] es true, solo emite filas con `status = pending` (vista pasajero).
+  /// El conductor puede usar `pendingOnly: false` para observar cambios de estado de su fila.
+  Stream<List<RideOfferEntity>> listenToRideOffers(
+    String rideId, {
+    bool pendingOnly = true,
+  });
+
+  /// Lectura puntual de ofertas `pending` (útil si Realtime no está habilitado en `ride_offers`).
+  Future<List<RideOfferEntity>> fetchPendingRideOffers(String rideId);
+
+  /// Inserta o actualiza una oferta `pending` sin cambiar el estado del viaje (`searching`).
+  Future<RideOfferEntity> submitNegotiationOffer({
+    required String rideId,
+    required String driverId,
+    required double offeredPrice,
+  });
+
+  /// Retira la oferta del conductor (`withdrawn`).
+  Future<void> withdrawRideOffer(String offerId);
+
+  /// El pasajero descarta una oferta concreta (`rejected`).
+  Future<void> rejectRideOffer(String offerId);
+
+  /// Acepta una oferta: RPC atómica preferida; ver `supabase/migrations/ride_offers.sql`.
+  Future<void> acceptRideOffer({
+    required String offerId,
+    required String rideId,
+    required String driverId,
+    required double finalPrice,
+  });
+
+  /// Conductor con oferta `pending` y viaje aún en `searching` (recuperación de sesión).
+  Future<({RideEntity ride, RideOfferEntity offer})?>
+      getPendingOfferContextForDriver(String driverId);
+
+  /// Número de conductores distintos que han respondido a esta solicitud
+  /// (cualquier estado en ride_offers). Proxy de "conductores que han visto la oferta".
+  Future<int> getRideViewersCount(String rideId);
+
+  /// Actualiza el precio ofertado del viaje en la tabla `rides` para que los
+  /// conductores lo vean en tiempo real.
+  Future<void> updateOfferedPrice(String rideId, double newPrice);
+}
+
+/// Error controlado cuando la solicitud ya no se puede aceptar.
+class RideRequestExpiredException implements Exception {
+  final String message;
+
+  const RideRequestExpiredException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Error de negocio genérico para aceptación de viaje.
+class RideAcceptanceException implements Exception {
+  final String message;
+
+  const RideAcceptanceException(this.message);
+
+  @override
+  String toString() => message;
 }

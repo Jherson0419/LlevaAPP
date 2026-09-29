@@ -18,6 +18,7 @@ class DriverApprovalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.of(context);
     final title = isBanned
         ? 'Cuenta suspendida'
         : 'Estamos verificando tus documentos';
@@ -28,7 +29,7 @@ class DriverApprovalScreen extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: AppTheme.darkBackground,
+        backgroundColor: colors.background,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -45,8 +46,8 @@ class DriverApprovalScreen extends StatelessWidget {
                   Text(
                     title,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: colors.textPrimary,
                       fontWeight: FontWeight.bold,
                       fontSize: 22,
                     ),
@@ -55,8 +56,8 @@ class DriverApprovalScreen extends StatelessWidget {
                   Text(
                     description,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppTheme.darkTextSecondary,
+                    style: TextStyle(
+                      color: colors.textSecondary,
                       fontSize: 15,
                       height: 1.45,
                     ),
