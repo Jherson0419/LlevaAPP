@@ -10,7 +10,7 @@ workflows:
         BUNDLE_ID: "pe.lleva.app"
         APP_STORE_APPLE_ID: "6817361943"
       groups:
-        - lleva_secrets
+        - Secretas
     scripts:
       - name: Set up .env file
         script: |
