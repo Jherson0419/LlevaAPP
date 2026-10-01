@@ -22,34 +22,51 @@ workflows:
           SUPABASE_REDIRECT_URL=$SUPABASE_REDIRECT_URL
           REVERSED_CLIENT_ID=$REVERSED_CLIENT_ID
           EOF
+
       - name: Get Flutter packages
         script: flutter pub get
+
       - name: Set up keychain
         script: keychain initialize
+
+      - name: Generate RSA 2048 key for certificate
+        script: |
+          openssl genrsa -out /tmp/cert_key.pem 2048
+          openssl req -new \
+            -key /tmp/cert_key.pem \
+            -out /tmp/cert_request.csr \
+            -subj "/CN=Lleva App/O=Jherson Vasquez/C=PE"
+
       - name: Fetch signing files
         script: |
           app-store-connect fetch-signing-files $BUNDLE_ID \
             --type IOS_APP_STORE \
-            --certificate-key=@env:APP_STORE_CONNECT_PRIVATE_KEY \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --issuer-id=$APP_STORE_CONNECT_ISSUER_ID \
             --key-id=$APP_STORE_CONNECT_KEY_IDENTIFIER \
             --create
+
       - name: Add certificates to keychain
         script: keychain add-certificates
+
       - name: Set up Xcode project signing
         script: xcode-project use-profiles
+
       - name: Install CocoaPods
         script: |
           cd ios && pod install
+
       - name: Flutter build IPA
         script: |
           flutter build ipa \
             --release \
             --dart-define-from-file=.env \
             --export-options-plist=$CM_EXPORT_OPTIONS_PLIST
+
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
