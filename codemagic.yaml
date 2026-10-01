@@ -61,7 +61,7 @@ workflows:
           flutter build ipa \
             --release \
             --dart-define-from-file=.env \
-            --export-options-plist=$CM_EXPORT_OPTIONS_PLIST
+            --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
       - build/ios/ipa/*.ipa
