@@ -32,10 +32,6 @@ workflows:
       - name: Generate RSA 2048 key for certificate
         script: |
           openssl genrsa -out /tmp/cert_key.pem 2048
-          openssl req -new \
-            -key /tmp/cert_key.pem \
-            -out /tmp/cert_request.csr \
-            -subj "/CN=Lleva App/O=Jherson Vasquez/C=PE"
 
       - name: Fetch signing files
         script: |
@@ -44,7 +40,8 @@ workflows:
             --certificate-key=@file:/tmp/cert_key.pem \
             --issuer-id=$APP_STORE_CONNECT_ISSUER_ID \
             --key-id=$APP_STORE_CONNECT_KEY_IDENTIFIER \
-            --create
+            --create \
+            --strict-match-identifier
 
       - name: Add certificates to keychain
         script: keychain add-certificates
