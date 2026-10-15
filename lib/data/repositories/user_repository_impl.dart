@@ -90,14 +90,87 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
+  Future<bool> existsProfileWithEmail(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return false;
+    // Tal como se escribió y en minúsculas; sin `ilike`, porque `_` y `%`
+    // (comunes en correos) son comodines ahí.
+    final variants = {trimmed, trimmed.toLowerCase()}.toList();
+    final rows = await _supabaseClient
+        .from('profiles')
+        .select('id')
+        .inFilter('email', variants)
+        .limit(1);
+    return rows.isNotEmpty;
+  }
+
+  @override
+  Future<bool> existsProfileWithPhone(String phone) async {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) return false;
+    final rows = await _supabaseClient
+        .from('profiles')
+        .select('id')
+        .eq('phone', trimmed)
+        .limit(1);
+    return rows.isNotEmpty;
+  }
+
+  @override
+  Future<bool> updateProfilePicture({
+    required String userId,
+    required String storagePath,
+  }) async {
+    final id = userId.trim();
+    if (id.isEmpty || id == 'temporal') return false;
+    try {
+      final rows = await _supabaseClient
+          .from('profiles')
+          .update({'profile_pic_url': storagePath})
+          .eq('id', id)
+          .select('id');
+      return rows.isNotEmpty;
+    } catch (e, st) {
+      developer.log(
+        'updateProfilePicture error: $e userId=$id',
+        name: 'UserRepositoryImpl',
+        error: e,
+        stackTrace: st,
+      );
+      return false;
+    }
+  }
+
+  @override
   Future<UserEntity?> createUserProfile(UserEntity user) async {
     final model = user as UserModel;
     try {
-      final response = await _supabaseClient
-          .from('profiles')
-          .insert(model.toJson())
-          .select()
-          .maybeSingle();
+      final payload = model.toJson();
+      Map<String, dynamic>? response;
+      try {
+        response = await _supabaseClient
+            .from('profiles')
+            .insert(payload)
+            .select()
+            .maybeSingle();
+      } on PostgrestException catch (e) {
+        // Base sin la columna `gender` (falta la migración
+        // 004_profiles_gender.sql): el alta no se bloquea por eso, se
+        // reintenta sin el género.
+        final missingGender = payload.containsKey('gender') &&
+            e.message.toLowerCase().contains('gender');
+        if (!missingGender) rethrow;
+        developer.log(
+          'createUserProfile: profiles.gender no existe; se crea sin género '
+          '(aplicar supabase/migrations/004_profiles_gender.sql)',
+          name: 'UserRepositoryImpl',
+        );
+        response = await _supabaseClient
+            .from('profiles')
+            .insert(Map.of(payload)..remove('gender'))
+            .select()
+            .maybeSingle();
+      }
 
       if (response != null) {
         return UserModel.fromJson(response);

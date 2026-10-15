@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/theme/app_theme.dart';
@@ -9,6 +8,7 @@ import '../../../core/utils/pending_driver_documents.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_event.dart';
 import '../../bloc/auth/auth_state.dart';
+import '../../widgets/otp_code_box.dart';
 
 class SmsVerificationScreen extends StatefulWidget {
   final String phoneNumber;
@@ -210,6 +210,9 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
+      // Sigue montada debajo de /register; el AuthAuthenticated/AuthError
+      // del registro lo atiende RegisterProfileScreen, no esta pantalla.
+      listenWhen: (_, __) => ModalRoute.of(context)?.isCurrent ?? true,
       listener: (context, state) {
         if (state is AuthOtpSent) {
           // Cubre tanto el envío inicial (al entrar a la pantalla) como un
@@ -264,17 +267,20 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
               },
             );
           } else {
-            context.push('/register', extra: state.phone);
+            // Login con un teléfono sin perfil y sin datos precargados:
+            // sigue por el onboarding nuevo. El nombre va vacío, así que el
+            // splash continúa en /onboarding/name antes del correo.
+            context.go(
+              '/splash/new-user',
+              extra: {'userName': '', 'phone': state.phone},
+            );
           }
         }
         if (state is AuthAuthenticated) {
           if (mounted) setState(() => _isVerifying = false);
           context.go(
-            '/welcome',
-            extra: {
-              'userName': state.user.fullName,
-              'isNewUser': false,
-            },
+            '/splash/returning-user',
+            extra: {'userName': state.user.fullName},
           );
         }
         if (state is AuthError) {
@@ -288,7 +294,7 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: AppTheme.darkBackground,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new),
@@ -362,61 +368,39 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(
                     AppConstants.smsCodeLength,
-                    (index) => SizedBox(
+                    (index) => OtpCodeBox(
+                      controller: _controllers[index],
+                      focusNode: _focusNodes[index],
                       width: 56,
                       height: 56,
-                      child: TextField(
-                        controller: _controllers[index],
-                        focusNode: _focusNodes[index],
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.number,
-                        maxLength: 1,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          color: AppTheme.darkText,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: InputDecoration(
-                          counterText: '',
-                          filled: true,
-                          fillColor: AppTheme.darkSurface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                      fontSize: 24,
+                      onChanged: (value) => _onChanged(index, value),
+                      onTap: () {
+                        _controllers[index].selection =
+                            TextSelection.fromPosition(
+                          TextPosition(
+                            offset: _controllers[index].text.length,
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: AppTheme.primaryBlue,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        onChanged: (value) => _onChanged(index, value),
-                        onTap: () {
-                          _controllers[index].selection =
-                              TextSelection.fromPosition(
-                            TextPosition(
-                              offset: _controllers[index].text.length,
-                            ),
-                          );
-                        },
-                        onSubmitted: (_) {
-                          if (index < AppConstants.smsCodeLength - 1) {
-                            _focusNodes[index + 1].requestFocus();
-                          } else {
-                            _focusNodes[index].unfocus();
-                          }
-                        },
-                      ),
+                        );
+                      },
+                      onSubmitted: (_) {
+                        if (index < AppConstants.smsCodeLength - 1) {
+                          _focusNodes[index + 1].requestFocus();
+                        } else {
+                          _focusNodes[index].unfocus();
+                        }
+                      },
                     ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Ingresa 000000 para continuar',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppTheme.primaryBlue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -424,7 +408,7 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
                   onPressed: _isVerifying ? null : _handleVerify,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryBlue,
-                    foregroundColor: Colors.black,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -438,7 +422,7 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.black),
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Text(
@@ -455,10 +439,7 @@ class _SmsVerificationScreenState extends State<SmsVerificationScreen> {
                   child: _remainingSeconds > 0
                       ? Text(
                           'Reenviar código en ${_remainingSeconds}s',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppTheme.darkTextSecondary,
-                                  ),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         )
                       : TextButton(
                           onPressed: _handleResend,

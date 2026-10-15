@@ -65,6 +65,7 @@ class RegisterUser extends AuthEvent {
   final String? licenseCategory;
   final String? licenseNumber;
   final DateTime? birthDate;
+  final String? gender;
   final String? dniFrontUrl;
   final String? dniBackUrl;
   final String? licenseUrl;
@@ -97,6 +98,7 @@ class RegisterUser extends AuthEvent {
     this.licenseCategory,
     this.licenseNumber,
     this.birthDate,
+    this.gender,
     this.dniFrontUrl,
     this.dniBackUrl,
     this.licenseUrl,
@@ -129,6 +131,7 @@ class RegisterUser extends AuthEvent {
         licenseCategory,
         licenseNumber,
         birthDate,
+        gender,
         dniFrontUrl,
         dniBackUrl,
         licenseUrl,

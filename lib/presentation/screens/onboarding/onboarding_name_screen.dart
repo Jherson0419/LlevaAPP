@@ -4,14 +4,29 @@ import 'package:go_router/go_router.dart';
 import '../../../core/utils/onboarding_feedback.dart';
 import '../../widgets/onboarding/onboarding_scaffold.dart';
 
+/// Paso 1 del onboarding: el nombre. Sigue en la foto de perfil
+/// (/onboarding/avatar) y la cuenta se crea en el paso del correo.
 class OnboardingNameScreen extends StatefulWidget {
-  const OnboardingNameScreen({super.key});
+  const OnboardingNameScreen({
+    super.key,
+    this.email = '',
+    this.verifiedPhone,
+  });
+
+  /// Correo de la cuenta de Google con la que se inició sesión; vacío si se
+  /// llegó por el login por teléfono (se pide en el paso del correo).
+  final String email;
+
+  /// Teléfono ya verificado por SMS (llegada desde el login por teléfono).
+  final String? verifiedPhone;
 
   @override
   State<OnboardingNameScreen> createState() => _OnboardingNameScreenState();
 }
 
 class _OnboardingNameScreenState extends State<OnboardingNameScreen> {
+  static const int _minNameLength = 2;
+
   final _nameCtrl = TextEditingController();
   String? _error;
 
@@ -23,25 +38,31 @@ class _OnboardingNameScreenState extends State<OnboardingNameScreen> {
 
   Future<void> _handleContinue() async {
     final name = _nameCtrl.text.trim();
-    if (name.length < 2) {
-      setState(
-        () => _error = 'Ingresa un nombre válido (mínimo 2 caracteres)',
-      );
+    if (name.length < _minNameLength) {
+      setState(() => _error = 'Ingresa tu nombre');
       return;
     }
     setState(() => _error = null);
     await playOnboardingFeedback();
     if (!mounted) return;
-    context.push('/onboarding/phone', extra: {'name': name});
+    final verifiedPhone = widget.verifiedPhone?.trim() ?? '';
+    context.push(
+      '/onboarding/avatar',
+      extra: {
+        'name': name,
+        'email': widget.email.trim(),
+        if (verifiedPhone.isNotEmpty) 'phone': verifiedPhone,
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      activeStep: 1,
+      activeStep: 0,
       icon: Icons.person_outline_rounded,
       title: '¿Cómo te llamas?',
-      subtitle: 'Dinos tu nombre para personalizar\ntu experiencia.',
+      subtitle: 'Cuéntanos tu nombre para\npersonalizar tu experiencia.',
       buttonText: 'Continuar',
       onButtonPressed: _handleContinue,
       content: TextField(
@@ -50,10 +71,13 @@ class _OnboardingNameScreenState extends State<OnboardingNameScreen> {
         textAlign: TextAlign.center,
         textCapitalization: TextCapitalization.words,
         textInputAction: TextInputAction.done,
-        style: const TextStyle(color: Colors.white, fontSize: 22),
+        style: TextStyle(
+          color: Theme.of(context).textTheme.bodyLarge?.color,
+          fontSize: 22,
+        ),
         decoration: InputDecoration(
           border: const UnderlineInputBorder(),
-          hintText: '¿Tu nombre?',
+          hintText: 'Tu nombre',
           hintStyle: const TextStyle(color: Color(0xFF666666)),
           errorText: _error,
         ),

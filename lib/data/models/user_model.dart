@@ -26,6 +26,7 @@ class UserModel extends UserEntity {
     super.licenseCategory,
     super.licenseNumber,
     super.birthDate,
+    super.gender,
     super.dniFrontUrl,
     super.dniBackUrl,
     super.licenseUrl,
@@ -64,6 +65,7 @@ class UserModel extends UserEntity {
       licenseCategory: json['license_category']?.toString(),
       licenseNumber: json['license_number']?.toString(),
       birthDate: _parseNullableDateTime(json['birth_date']),
+      gender: json['gender'] as String?,
       dniFrontUrl: _firstNonEmptyString([
         docs['dni_front_url'],
         docs['dniFrontUrl'],
@@ -215,6 +217,13 @@ class UserModel extends UserEntity {
       map['id'] = id;
     }
 
+    // Solo se envía si hay valor: los flujos que no piden género (registro
+    // de conductor, RegisterProfileScreen) no dependen de la columna
+    // `profiles.gender` ni la pisan con null.
+    if (gender != null) {
+      map['gender'] = gender;
+    }
+
     return map;
   }
 
@@ -239,6 +248,7 @@ class UserModel extends UserEntity {
     String? licenseCategory,
     String? licenseNumber,
     DateTime? birthDate,
+    String? gender,
     String? dniFrontUrl,
     String? dniBackUrl,
     String? licenseUrl,
@@ -274,6 +284,7 @@ class UserModel extends UserEntity {
       licenseCategory: licenseCategory ?? this.licenseCategory,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       birthDate: birthDate ?? this.birthDate,
+      gender: gender ?? this.gender,
       dniFrontUrl: dniFrontUrl ?? this.dniFrontUrl,
       dniBackUrl: dniBackUrl ?? this.dniBackUrl,
       licenseUrl: licenseUrl ?? this.licenseUrl,

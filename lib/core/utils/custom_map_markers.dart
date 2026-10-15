@@ -470,6 +470,94 @@ class CustomMapMarkers {
   }
 
   /// Marcador de auto con el mismo estilo visual que A/B.
+  /// Silueta del pin «gota» de Lleva: círculo arriba que se afina hasta una
+  /// punta en [tip]. [radius] es el radio del círculo y [height] la
+  /// distancia de la punta al centro del círculo. La usan el pin central de
+  /// los mapas y el marcador de origen, para que se vean iguales.
+  static Path teardropPinPath({
+    required Offset tip,
+    required double radius,
+    required double height,
+  }) {
+    final cx = tip.dx;
+    final circleCy = tip.dy - height;
+    return Path()
+      ..moveTo(cx, tip.dy)
+      ..cubicTo(
+        cx - radius * 0.4,
+        tip.dy - height * 0.3,
+        cx - radius,
+        circleCy + radius * 0.7,
+        cx - radius,
+        circleCy,
+      )
+      ..arcTo(
+        Rect.fromCircle(center: Offset(cx, circleCy), radius: radius),
+        math.pi,
+        math.pi,
+        false,
+      )
+      ..cubicTo(
+        cx + radius,
+        circleCy + radius * 0.7,
+        cx + radius * 0.4,
+        tip.dy - height * 0.3,
+        cx,
+        tip.dy,
+      )
+      ..close();
+  }
+
+  /// Azul del pin de origen y rojo del de destino.
+  static const Color originPinColor = Color(0xFF0066CC);
+  static const Color destPinColor = Color(0xFFE53935);
+
+  /// Marcador con el pin «gota» de [color], del mismo tamaño que el pin
+  /// central de los mapas (radio 14, punta a 38 del centro del círculo). La
+  /// punta queda en el borde inferior central: usar `anchor: Offset(0.5, 1.0)`.
+  static Future<BitmapDescriptor> createPinMarker({
+    Color color = originPinColor,
+  }) async {
+    // Medidas lógicas; se dibuja al doble para que se vea nítido.
+    const scale = 2.0;
+    const radius = 14.0;
+    const tipToCenter = 38.0;
+    const width = radius * 2 + 4;
+    const height = tipToCenter + radius + 2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder)..scale(scale);
+    const tip = Offset(width / 2, height);
+    canvas.drawPath(
+      teardropPinPath(tip: tip, radius: radius, height: tipToCenter),
+      ui.Paint()..color = color,
+    );
+    canvas.drawCircle(
+      const Offset(width / 2, height - tipToCenter),
+      radius * 0.45,
+      ui.Paint()..color = Colors.white,
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(
+      (width * scale).toInt(),
+      (height * scale).toInt(),
+    );
+    try {
+      final bd = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bd == null) {
+        throw StateError('toByteData devolvió null');
+      }
+      return BitmapDescriptor.bytes(
+        bd.buffer.asUint8List(),
+        width: width,
+        height: height,
+      );
+    } finally {
+      image.dispose();
+    }
+  }
+
   static Future<BitmapDescriptor> createCarMarker() async {
     return _createCarMarkerCanvas(_carSize);
   }
@@ -584,7 +672,6 @@ class CustomMapMarkers {
     const pointerHalfWidth = 6.0;
     final bodyHeight = line1Painter.height + line2Painter.height + (verticalPadding * 2) + 2;
     final height = bodyHeight + pointerHeight;
-    final rect = ui.Rect.fromLTWH(0, 0, width, height);
     final bodyRect = ui.Rect.fromLTWH(0, 0, width, bodyHeight);
 
     final shadow = ui.Paint()

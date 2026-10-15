@@ -29,6 +29,8 @@ class ClientRideState extends Equatable {
   final RideEntity? activeRide;
   final List<RideOfferEntity> pendingRideOffers;
   final String paymentMethod;
+  /// true si no se pudo leer el GPS (permiso denegado o ubicación apagada).
+  final bool locationDenied;
   /// Conductores distintos que han respondido a esta solicitud (proxy de visualizaciones).
   final int viewersCount;
 
@@ -56,6 +58,7 @@ class ClientRideState extends Equatable {
     this.pendingRideOffers = const [],
     this.paymentMethod = 'efectivo',
     this.viewersCount = 0,
+    this.locationDenied = false,
   });
 
   ClientRideState copyWith({
@@ -82,6 +85,7 @@ class ClientRideState extends Equatable {
     List<RideOfferEntity>? pendingRideOffers,
     String? paymentMethod,
     int? viewersCount,
+    bool? locationDenied,
   }) {
     return ClientRideState(
       status: status ?? this.status,
@@ -114,6 +118,7 @@ class ClientRideState extends Equatable {
       pendingRideOffers: pendingRideOffers ?? this.pendingRideOffers,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       viewersCount: viewersCount ?? this.viewersCount,
+      locationDenied: locationDenied ?? this.locationDenied,
     );
   }
 
@@ -142,6 +147,7 @@ class ClientRideState extends Equatable {
         pendingRideOffers,
         paymentMethod,
         viewersCount,
+        locationDenied,
       ];
 }
 

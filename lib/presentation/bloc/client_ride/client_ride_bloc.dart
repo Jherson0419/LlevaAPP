@@ -4,9 +4,11 @@ import 'dart:math' as math;
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:geolocator/geolocator.dart' show Position;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/enums/client_ride_status.dart';
 import '../../../core/enums/client_vehicle_category.dart';
 import '../../../core/services/places_service.dart';
@@ -25,6 +27,14 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
   final RideRepository _rideRepository;
   static const Duration _requestRecoveryWindow = Duration(minutes: 15);
 
+  /// Coordenadas de respaldo (centro de Trujillo) para un destino cuyo
+  /// punto exacto no se pudo resolver. Es una ubicación aproximada: la
+  /// distancia y la tarifa se calculan hasta aquí, no hasta el lugar real.
+  static const LatLng fallbackDestLatLng = LatLng(
+    AppConstants.trujilloLatitude,
+    AppConstants.trujilloLongitude,
+  );
+
   StreamSubscription<RideEntity>? _rideSubscription;
   StreamSubscription<List<RideOfferEntity>>? _rideOffersSubscription;
   Timer? _rideOffersPollTimer;
@@ -36,35 +46,25 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
   })  : _placesService = placesService,
         _rideRepository = rideRepository,
         super(const ClientRideState()) {
-    on<OriginTextChanged>(
-      _onOriginTextChanged,
-      transformer: _debounce<OriginTextChanged>(),
-    );
     on<DestTextChanged>(
       _onDestTextChanged,
       transformer: _debounce<DestTextChanged>(),
     );
-    on<OriginSelected>(_onOriginSelected);
     on<DestSelected>(_onDestSelected);
+    on<DestCoordinatesSelected>(_onDestCoordinatesSelected);
     on<InitializePickupFromCurrentLocation>(
       _onInitializePickupFromCurrentLocation,
     );
     on<PickupPinMoved>(_onPickupPinMoved);
     on<DestPinMoved>(_onDestPinMoved);
+    on<SwapOriginDestination>(_onSwapOriginDestination);
     on<PriceChanged>(_onPriceChanged);
     on<VehicleCategoryChanged>(_onVehicleCategoryChanged);
     on<RidePreferencesChanged>(_onRidePreferencesChanged);
-    on<StartEditingOrigin>(_onStartEditingOrigin);
-    on<StartEditingDest>(_onStartEditingDest);
-    on<BackToSearchPanel>(_onBackToSearchPanel);
-    on<ProceedToReadyToRequest>(_onProceedToReadyToRequest);
     on<PaymentMethodChanged>(_onPaymentMethodChanged);
     on<SubmitRideRequest>(_onSubmitRideRequest);
     on<RideStatusUpdated>(_onRideStatusUpdated);
-    on<StartSearch>(_onStartSearch);
     on<CancelRide>(_onCancelRide);
-    on<CalculateRoute>(_onCalculateRoute);
-    on<SubmitOffer>(_onSubmitOffer);
     on<AcceptDriverOffer>(_onAcceptDriverOffer);
     on<RejectRideOffer>(_onRejectRideOffer);
     on<RideOffersUpdated>(_onRideOffersUpdated);
@@ -83,34 +83,24 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
     await super.close();
   }
 
+  void _subscribeToRide(String rideId) {
+    _rideSubscription = _rideRepository.subscribeToRide(rideId).listen(
+          (updated) => add(RideStatusUpdated(updated)),
+        );
+  }
+
+  /// Error que no cambia la etapa del viaje (la solicitud o el viaje siguen
+  /// en pie): solo deja el mensaje para que la pantalla lo avise. Se limpia
+  /// antes para que un mismo mensaje repetido vuelva a notificarse.
+  void _emitTransientError(Emitter<ClientRideState> emit, String message) {
+    emit(state.copyWith(errorMessage: null));
+    emit(state.copyWith(errorMessage: message));
+  }
+
   EventTransformer<E> _debounce<E>() {
     return (events, mapper) => events
         .debounceTime(const Duration(milliseconds: 500))
         .switchMap(mapper);
-  }
-
-  Future<void> _onOriginTextChanged(
-    OriginTextChanged event,
-    Emitter<ClientRideState> emit,
-  ) async {
-    emit(
-      state.copyWith(
-        originName: event.text,
-        status: ClientRideStatus.initial,
-        errorMessage: null,
-      ),
-    );
-
-    final predictions = await _placesService.searchPlaces(
-      event.text,
-      near: state.originLatLng,
-      cityHint: _cityHintFromState(state),
-    );
-    emit(
-      state.copyWith(
-        originPredictions: predictions,
-      ),
-    );
   }
 
   Future<void> _onDestTextChanged(
@@ -143,66 +133,44 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
     );
   }
 
-  Future<void> _onOriginSelected(
-    OriginSelected event,
-    Emitter<ClientRideState> emit,
-  ) async {
-    emit(
-      state.copyWith(
-        originName: event.description,
-        originPredictions: const [],
-        errorMessage: null,
-        status: ClientRideStatus.initial,
-      ),
-    );
-
-    final details = await _placesService.getPlaceDetails(event.placeId);
-    if (details == null) {
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage: 'No se pudo obtener el punto de recojo',
-        ),
-      );
-      return;
-    }
-
-    var nextState = state.copyWith(
-      originLatLng: details.location,
-      status: ClientRideStatus.initial,
-    );
-
-    if (nextState.originLatLng != null && nextState.destLatLng != null) {
-      nextState = await _applyDrivingRoute(
-        base: nextState,
-        origin: nextState.originLatLng!,
-        dest: nextState.destLatLng!,
-      );
-    }
-
-    emit(nextState);
-  }
-
   Future<void> _onInitializePickupFromCurrentLocation(
     InitializePickupFromCurrentLocation event,
     Emitter<ClientRideState> emit,
   ) async {
     if (state.originLatLng != null) return;
+    final Position position;
     try {
-      final position = await LocationHelper.determinePosition();
-      final latLng = LatLng(position.latitude, position.longitude);
-      final address = await _placesService.reverseGeocode(latLng);
-      emit(
-        state.copyWith(
-          originLatLng: latLng,
-          originName: address ?? 'Mi ubicación actual',
-          originPredictions: const [],
-          errorMessage: null,
-        ),
+      position = await LocationHelper.determinePosition(
+        requestIfDenied: event.askPermission,
       );
     } catch (_) {
-      // No bloquea el flujo si el usuario aún no otorgó permisos.
+      // Permiso denegado o GPS apagado: el flujo sigue (el origen se puede
+      // fijar moviendo el mapa), pero la UI ofrece activar la ubicación.
+      if (state.originLatLng == null) {
+        emit(state.copyWith(locationDenied: true));
+      }
+      return;
     }
+
+    final latLng = LatLng(position.latitude, position.longitude);
+    String? address;
+    try {
+      address = await _placesService.reverseGeocode(latLng);
+    } catch (_) {
+      // Sin dirección (p. ej. sin red): queda el texto genérico.
+    }
+    // Mientras se esperaba la ubicación pudo recuperarse un viaje activo
+    // (o fijarse un origen): ese manda.
+    if (state.originLatLng != null || state.activeRide != null) return;
+    emit(
+      state.copyWith(
+        originLatLng: latLng,
+        originName: address ?? 'Mi ubicación actual',
+        originPredictions: const [],
+        locationDenied: false,
+        errorMessage: null,
+      ),
+    );
   }
 
   Future<void> _onPickupPinMoved(
@@ -267,6 +235,55 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
     emit(nextState);
   }
 
+  Future<void> _onDestCoordinatesSelected(
+    DestCoordinatesSelected event,
+    Emitter<ClientRideState> emit,
+  ) async {
+    final dest = LatLng(event.lat, event.lng);
+    final next = state.copyWith(
+      destLatLng: dest,
+      destName: event.name,
+      destPredictions: const [],
+      routePolyline: const [],
+      routeDistanceKm: null,
+      routeDurationSeconds: null,
+      status: ClientRideStatus.initial,
+      errorMessage: null,
+    );
+    // El destino queda fijado de inmediato; la ruta llega después.
+    emit(next);
+
+    final origin = next.originLatLng;
+    if (origin != null) {
+      emit(await _applyDrivingRoute(base: next, origin: origin, dest: dest));
+    }
+  }
+
+  Future<void> _onSwapOriginDestination(
+    SwapOriginDestination event,
+    Emitter<ClientRideState> emit,
+  ) async {
+    final origin = state.originLatLng;
+    final dest = state.destLatLng;
+    if (origin == null || dest == null) return;
+
+    final swapped = state.copyWith(
+      originLatLng: dest,
+      destLatLng: origin,
+      originName: state.destName ?? '',
+      destName: state.originName ?? '',
+      originPredictions: const [],
+      destPredictions: const [],
+      status: ClientRideStatus.initial,
+      errorMessage: null,
+    );
+    // Primero el intercambio (respuesta inmediata en pantalla) y luego la
+    // ruta en el nuevo sentido, que puede diferir en trazo, distancia y
+    // tarifa.
+    emit(swapped);
+    emit(await _applyDrivingRoute(base: swapped, origin: dest, dest: origin));
+  }
+
   Future<void> _onDestSelected(
     DestSelected event,
     Emitter<ClientRideState> emit,
@@ -280,19 +297,18 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
       ),
     );
 
-    final details = await _placesService.getPlaceDetails(event.placeId);
-    if (details == null) {
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage: 'No se pudo obtener el destino',
-        ),
-      );
-      return;
+    PlaceDetails? details;
+    try {
+      details = await _placesService.getPlaceDetails(event.placeId);
+    } catch (_) {
+      details = null;
     }
 
+    // Si Places no devuelve las coordenadas, el flujo no se detiene: el
+    // destino conserva su nombre y se ubica de forma aproximada en el
+    // centro de Trujillo ([fallbackDestLatLng]).
     var nextState = state.copyWith(
-      destLatLng: details.location,
+      destLatLng: details?.location ?? fallbackDestLatLng,
       status: ClientRideStatus.initial,
     );
 
@@ -311,72 +327,54 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
     PriceChanged event,
     Emitter<ClientRideState> emit,
   ) {
+    var next = state;
+    if (event.autoSelectCategory) {
+      final category = _categoryClosestTo(event.price, state);
+      if (category != state.vehicleCategory) {
+        // Cambia la categoría (y con ella la tarifa sugerida y el mínimo),
+        // pero se respeta el precio que eligió el pasajero.
+        next = _stateWithRecalculatedPrices(
+          state.copyWith(vehicleCategory: category),
+        );
+      }
+    }
     emit(
-      state.copyWith(
+      next.copyWith(
         offeredPrice: ClientRidePricing.clampOfferedPrice(
           price: event.price,
-          suggestedPrice: state.suggestedPrice,
+          suggestedPrice: next.suggestedPrice,
         ),
         errorMessage: null,
       ),
     );
   }
 
-  void _onStartEditingOrigin(
-    StartEditingOrigin event,
-    Emitter<ClientRideState> emit,
-  ) {
-    emit(
-      state.copyWith(
-        status: ClientRideStatus.initial,
-        originLatLng: null,
-        originPredictions: const [],
-        routePolyline: const [],
-        suggestedPrice: null,
-        routeBaseSuggested: null,
-        offeredPrice: 0,
-        errorMessage: null,
-        vehicleCategory: ClientVehicleCategory.standard,
-        moreThanFourPassengers: false,
-        babySeat: false,
-        pet: false,
-        rideComments: '',
-      ),
-    );
-  }
+  /// Categoría cuya tarifa sugerida (con los extras elegidos) queda más
+  /// cerca de [price]. En empate se queda la actual. Sin ruta no cambia.
+  ClientVehicleCategory _categoryClosestTo(double price, ClientRideState s) {
+    final base = s.routeBaseSuggested;
+    if (base == null || base <= 0) return s.vehicleCategory;
+    double diffFor(ClientVehicleCategory category) {
+      final suggested = ClientRidePricing.totalSuggested(
+        routeBase: base,
+        category: category,
+        moreThanFourPassengers: s.moreThanFourPassengers,
+        babySeat: s.babySeat,
+        pet: s.pet,
+      );
+      return (suggested - price).abs();
+    }
 
-  void _onStartEditingDest(
-    StartEditingDest event,
-    Emitter<ClientRideState> emit,
-  ) {
-    emit(
-      state.copyWith(
-        status: ClientRideStatus.initial,
-        destLatLng: null,
-        destPredictions: const [],
-        routePolyline: const [],
-        suggestedPrice: null,
-        routeBaseSuggested: null,
-        offeredPrice: 0,
-        errorMessage: null,
-        vehicleCategory: ClientVehicleCategory.standard,
-        moreThanFourPassengers: false,
-        babySeat: false,
-        pet: false,
-        rideComments: '',
-      ),
-    );
-  }
-
-  Future<void> _onBackToSearchPanel(
-    BackToSearchPanel event,
-    Emitter<ClientRideState> emit,
-  ) async {
-    await _rideSubscription?.cancel();
-    _rideSubscription = null;
-    _stopListeningToRideOffers();
-    final pay = state.paymentMethod;
-    emit(ClientRideState(paymentMethod: pay));
+    var best = s.vehicleCategory;
+    var bestDiff = diffFor(best);
+    for (final category in ClientVehicleCategory.values) {
+      final diff = diffFor(category);
+      if (diff < bestDiff) {
+        best = category;
+        bestDiff = diff;
+      }
+    }
+    return best;
   }
 
   void _startListeningToRideOffers(String rideId) {
@@ -482,7 +480,8 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
       routeDistanceKm: distanceKm,
       routeDurationSeconds: driving?.durationSeconds,
       routeBaseSuggested: baseFare,
-      vehicleCategory: ClientVehicleCategory.standard,
+      // La categoría se conserva: puede venir elegida desde el inicio del
+      // dashboard, antes de que exista una ruta.
       moreThanFourPassengers: false,
       babySeat: false,
       pet: false,
@@ -491,29 +490,6 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
       errorMessage: null,
     );
     return _stateWithRecalculatedPrices(next);
-  }
-
-  Future<void> _onProceedToReadyToRequest(
-    ProceedToReadyToRequest event,
-    Emitter<ClientRideState> emit,
-  ) async {
-    final origin = state.originLatLng;
-    final dest = state.destLatLng;
-    if (origin == null || dest == null) return;
-
-    ClientRideState next = state;
-    if (state.routePolyline.isEmpty || state.routeBaseSuggested == null) {
-      next = await _applyDrivingRoute(
-        base: state,
-        origin: origin,
-        dest: dest,
-      );
-    }
-    emit(
-      _stateWithRecalculatedPrices(
-        next.copyWith(status: ClientRideStatus.readyToRequest),
-      ),
-    );
   }
 
   ClientRideState _stateWithRecalculatedPrices(ClientRideState s) {
@@ -538,6 +514,9 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         break;
       case ClientVehicleCategory.xl:
         tags.add('XL (hasta 6 pax)');
+        break;
+      case ClientVehicleCategory.moto:
+        tags.add('Moto');
         break;
       case ClientVehicleCategory.standard:
         break;
@@ -636,9 +615,7 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
 
       final created = await _rideRepository.createRideRequest(ride);
 
-      _rideSubscription = _rideRepository.subscribeToRide(created.id).listen(
-            (updated) => add(RideStatusUpdated(updated)),
-          );
+      _subscribeToRide(created.id);
 
       _startListeningToRideOffers(created.id);
 
@@ -767,16 +744,28 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
       }
 
       await _rideSubscription?.cancel();
-      _rideSubscription = _rideRepository.subscribeToRide(recovered.id).listen(
-            (updated) => add(RideStatusUpdated(updated)),
-          );
+      _subscribeToRide(recovered.id);
+
+      // La pantalla del viaje lee origen, destino y oferta del estado: se
+      // reponen desde el viaje guardado.
+      final origin = LatLng(recovered.originLat, recovered.originLng);
+      final dest = LatLng(recovered.destLat, recovered.destLng);
+      final base = state.copyWith(
+        originLatLng: origin,
+        destLatLng: dest,
+        originName: recovered.originName,
+        // Sin las etiquetas de servicio/notas que se añaden al enviarlo.
+        destName: recovered.destName.split('\n').first.trim(),
+        offeredPrice: recovered.offeredPrice,
+        paymentMethod: recovered.paymentMethod,
+      );
 
       switch (recovered.status) {
         case 'searching':
         case 'negotiating':
           _startListeningToRideOffers(recovered.id);
           emit(
-            state.copyWith(
+            base.copyWith(
               status: ClientRideStatus.searchingDriver,
               activeRide: recovered,
               errorMessage: null,
@@ -786,7 +775,7 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         case 'accepted':
           _stopListeningToRideOffers();
           emit(
-            state.copyWith(
+            base.copyWith(
               status: ClientRideStatus.driverAssigned,
               activeRide: recovered,
               errorMessage: null,
@@ -797,7 +786,7 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         case 'arrived':
           _stopListeningToRideOffers();
           emit(
-            state.copyWith(
+            base.copyWith(
               status: ClientRideStatus.driverArrived,
               activeRide: recovered,
               errorMessage: null,
@@ -805,10 +794,9 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
           );
           break;
         case 'ongoing':
-          // En este estado la UI muestra directamente mapa + ruta activa (TripOngoingPanel).
           _stopListeningToRideOffers();
           emit(
-            state.copyWith(
+            base.copyWith(
               status: ClientRideStatus.tripOngoing,
               activeRide: recovered,
               errorMessage: null,
@@ -816,8 +804,23 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
           );
           break;
         default:
-          break;
+          return;
       }
+
+      // Trazo de la ruta para el mapa (solo dibujo: no toca la tarifa).
+      final driving = await _placesService.getDrivingRoute(origin, dest);
+      if (driving == null ||
+          driving.points.isEmpty ||
+          state.activeRide?.id != recovered.id) {
+        return;
+      }
+      emit(
+        state.copyWith(
+          routePolyline: driving.points,
+          routeDistanceKm: driving.distanceKm,
+          routeDurationSeconds: driving.durationSeconds,
+        ),
+      );
     } catch (e, stack) {
       developer.log(
         'CheckActiveRide: no se pudo recuperar viaje activo: $e',
@@ -884,11 +887,9 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         error: e,
         stackTrace: stack,
       );
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage: 'No se pudo actualizar el precio. Intenta de nuevo.',
-        ),
+      _emitTransientError(
+        emit,
+        'No se pudo actualizar el precio. Intenta de nuevo.',
       );
     }
   }
@@ -910,12 +911,7 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         finalPrice: event.finalPrice,
       );
     } catch (_) {
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage: 'No se pudo aceptar la oferta del conductor',
-        ),
-      );
+      _emitTransientError(emit, 'No se pudo aceptar la oferta del conductor');
     }
   }
 
@@ -926,22 +922,8 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
     try {
       await _rideRepository.rejectRideOffer(event.offerId);
     } catch (_) {
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage: 'No se pudo descartar la oferta',
-        ),
-      );
+      _emitTransientError(emit, 'No se pudo descartar la oferta');
     }
-  }
-
-  void _onStartSearch(StartSearch event, Emitter<ClientRideState> emit) {
-    emit(
-      state.copyWith(
-        status: ClientRideStatus.initial,
-        errorMessage: null,
-      ),
-    );
   }
 
   Future<void> _onCancelRide(
@@ -1006,25 +988,17 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         error: e,
         stackTrace: stack,
       );
-      emit(
-        state.copyWith(
-          status: ClientRideStatus.error,
-          errorMessage:
-              'No se pudo cancelar el viaje en el servidor. Intenta de nuevo.',
-        ),
+      // El viaje sigue en pie: se vuelve a escuchar (y a recibir ofertas
+      // si aún se buscaba conductor) y la pantalla conserva su etapa.
+      _subscribeToRide(rideId);
+      if (state.status == ClientRideStatus.searchingDriver) {
+        _startListeningToRideOffers(rideId);
+      }
+      _emitTransientError(
+        emit,
+        'No se pudo cancelar el viaje en el servidor. Intenta de nuevo.',
       );
     }
-  }
-
-  void _onCalculateRoute(
-    CalculateRoute event,
-    Emitter<ClientRideState> emit,
-  ) {
-    // Flujo principal: usar el panel del dashboard con Places.
-  }
-
-  void _onSubmitOffer(SubmitOffer event, Emitter<ClientRideState> emit) {
-    emit(state.copyWith(offeredPrice: event.offerPrice));
   }
 
   // Distancia aproximada en km usando fórmula de Haversine simplificada

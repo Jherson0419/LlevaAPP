@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,12 +9,19 @@ import 'go_router_refresh.dart';
 import '../../presentation/bloc/driver_stats/driver_stats_cubit.dart';
 import '../../presentation/bloc/driver_status/driver_status_bloc.dart';
 import '../../presentation/bloc/driver_wallet/driver_wallet_cubit.dart';
-import '../../presentation/screens/splash/splash_screen.dart';
-import '../../presentation/screens/splash/welcome_splash_screen.dart';
+import '../../presentation/screens/splash/animated_splash_screen.dart';
+import '../../presentation/screens/splash/new_user_splash_screen.dart';
+import '../../presentation/screens/splash/returning_user_splash_screen.dart';
 import '../../presentation/screens/onboarding/onboarding_welcome_screen.dart';
 import '../../presentation/screens/onboarding/onboarding_name_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_avatar_screen.dart';
+import '../../presentation/screens/onboarding/permissions_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_gender_screen.dart';
 import '../../presentation/screens/onboarding/onboarding_phone_screen.dart';
 import '../../presentation/screens/onboarding/onboarding_code_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_email_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_dni_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_birthdate_screen.dart';
 import '../../presentation/screens/login/login_screen.dart';
 import '../../presentation/screens/register/driver_register_screen.dart';
 import '../../presentation/screens/register/client_register_screen.dart';
@@ -33,7 +39,9 @@ import '../../presentation/screens/client/client_help_screen.dart';
 import '../../presentation/screens/client/client_support_screen.dart';
 import '../../presentation/screens/history/ride_history_screen.dart';
 import '../../presentation/screens/driver/become_driver_screen.dart';
+import '../../presentation/bloc/driver_profile/driver_profile_cubit.dart';
 import '../../presentation/screens/driver/driver_application_sent_screen.dart';
+import '../../presentation/screens/driver/driver_level_screen.dart';
 import '../../presentation/screens/driver/driver_rejected_documents_screen.dart';
 import '../../presentation/screens/driver/driver_route_placeholder_screen.dart';
 import '../../presentation/screens/driver_profile/driver_profile_screen.dart';
@@ -52,6 +60,7 @@ class AppRouter {
 
   static const String driverApprovalPath = '/driver_approval';
   static const String driverRejectedDocsPath = '/driver_rejected_documents';
+  static const String driverLevelPath = '/driver_level';
 
   static DateTime? _parseIsoDate(String? value) {
     if (value == null || value.isEmpty) return null;
@@ -59,13 +68,24 @@ class AppRouter {
   }
 
   static bool _isPublicPath(String path) {
+    // '/splash/new-user' se muestra con AuthNeedsRegistration (aún sin
+    // perfil), así que tiene que ser público o el redirect manda a /login.
     return path == '/splash' ||
+        path.startsWith('/splash/') ||
         path == '/login' ||
         path == '/driver-register' ||
         path == '/client-register' ||
         path == '/register' ||
         path.startsWith('/sms-verification') ||
-        path.startsWith('/onboarding');
+        // Onboarding vigente: bienvenida (Google) → nombre → avatar →
+        // correo, donde se crea la cuenta. Género, teléfono, código, DNI y
+        // nacimiento ya no forman parte del flujo.
+        path == '/onboarding/welcome' ||
+        path == '/onboarding/name' ||
+        path == '/onboarding/avatar' ||
+        path == '/onboarding/email' ||
+        // Explicación de permisos antes del primer dashboard.
+        path == '/permissions';
   }
 
   static bool _isDriverExclusivePath(String path) {
@@ -76,6 +96,7 @@ class AppRouter {
         path == driverHelpPath ||
         path == driverSettingsPath ||
         path == driverRejectedDocsPath ||
+        path == driverLevelPath ||
         path == '/city_requests';
   }
 
@@ -176,7 +197,7 @@ class AppRouter {
         GoRoute(
           path: '/splash',
           name: 'splash',
-          builder: (context, state) => const SplashScreen(),
+          builder: (context, state) => const AnimatedSplashScreen(),
         ),
         GoRoute(
           path: '/login',
@@ -184,29 +205,26 @@ class AppRouter {
           builder: (context, state) => const LoginScreen(),
         ),
         GoRoute(
-          path: '/welcome',
-          name: 'welcome',
+          path: '/splash/new-user',
+          name: 'splash-new-user',
           builder: (context, state) {
             final extra = state.extra;
             final map = extra is Map ? extra : const {};
-            final userName = map['userName']?.toString() ?? '';
-            final isNewUser = map['isNewUser'] == true;
-            return WelcomeSplashScreen(
-              userName: userName,
-              isNewUser: isNewUser,
-              onComplete: () {
-                final authState = context.read<AuthBloc>().state;
-                if (authState is AuthAuthenticated) {
-                  final mode = context.read<PassengerDriverModeCubit>().state;
-                  if (shouldUseDriverHome(authState.user, mode)) {
-                    context.go('/dashboard');
-                  } else {
-                    context.go('/client-dashboard');
-                  }
-                } else {
-                  context.go('/login');
-                }
-              },
+            return NewUserSplashScreen(
+              userName: map['userName']?.toString() ?? '',
+              phone: map['phone']?.toString() ?? '',
+              gender: map['gender']?.toString() ?? 'other',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/splash/returning-user',
+          name: 'splash-returning-user',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return ReturningUserSplashScreen(
+              userName: map['userName']?.toString() ?? '',
             );
           },
         ),
@@ -218,15 +236,41 @@ class AppRouter {
         GoRoute(
           path: '/onboarding/name',
           name: 'onboarding-name',
-          builder: (context, state) => const OnboardingNameScreen(),
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingNameScreen(
+              // Correo de la cuenta de Google (flujo vigente).
+              email: map['email']?.toString() ?? '',
+              verifiedPhone: map['phone']?.toString(),
+            );
+          },
+        ),
+        // Sin uso: el onboarding ya no pasa por género, teléfono ni código
+        // (ni por DNI y nacimiento, más abajo). Se conservan las rutas y sus
+        // pantallas por si vuelven al flujo.
+        GoRoute(
+          path: '/onboarding/gender',
+          name: 'onboarding-gender',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingGenderScreen(
+              name: map['name']?.toString() ?? '',
+              verifiedPhone: map['phone']?.toString(),
+            );
+          },
         ),
         GoRoute(
           path: '/onboarding/phone',
           name: 'onboarding-phone',
           builder: (context, state) {
             final extra = state.extra;
-            final name = extra is Map ? (extra['name']?.toString() ?? '') : '';
-            return OnboardingPhoneScreen(name: name);
+            final map = extra is Map ? extra : const {};
+            return OnboardingPhoneScreen(
+              name: map['name']?.toString() ?? '',
+              gender: map['gender']?.toString() ?? 'other',
+            );
           },
         ),
         GoRoute(
@@ -238,6 +282,72 @@ class AppRouter {
             return OnboardingCodeScreen(
               name: map['name']?.toString() ?? '',
               phone: map['phone']?.toString() ?? '',
+              gender: map['gender']?.toString() ?? 'other',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/permissions',
+          name: 'permissions',
+          builder: (context, state) => const PermissionsScreen(),
+        ),
+        GoRoute(
+          path: '/onboarding/avatar',
+          name: 'onboarding-avatar',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingAvatarScreen(
+              name: map['name']?.toString() ?? '',
+              email: map['email']?.toString() ?? '',
+              verifiedPhone: map['phone']?.toString(),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/onboarding/email',
+          name: 'onboarding-email',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingEmailScreen(
+              name: map['name']?.toString() ?? '',
+              email: map['email']?.toString() ?? '',
+              // Solo llega con un teléfono ya verificado desde el login.
+              phone: map['phone']?.toString() ?? '',
+              // Avatar del paso 2: 'male' | 'female' | 'other'.
+              gender: map['gender']?.toString(),
+            );
+          },
+        ),
+        // Sin uso (ver nota en /onboarding/gender).
+        GoRoute(
+          path: '/onboarding/dni',
+          name: 'onboarding-dni',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingDniScreen(
+              name: map['name']?.toString() ?? '',
+              phone: map['phone']?.toString() ?? '',
+              email: map['email']?.toString() ?? '',
+              gender: map['gender']?.toString() ?? 'other',
+            );
+          },
+        ),
+        // Sin uso (ver nota en /onboarding/gender).
+        GoRoute(
+          path: '/onboarding/birthdate',
+          name: 'onboarding-birthdate',
+          builder: (context, state) {
+            final extra = state.extra;
+            final map = extra is Map ? extra : const {};
+            return OnboardingBirthDateScreen(
+              name: map['name']?.toString() ?? '',
+              phone: map['phone']?.toString() ?? '',
+              email: map['email']?.toString() ?? '',
+              dni: map['dni']?.toString() ?? '',
+              gender: map['gender']?.toString() ?? 'other',
             );
           },
         ),
@@ -373,6 +483,30 @@ class AppRouter {
           builder: (context, state) => BecomeDriverScreen(
             initialDocumentToFix: state.uri.queryParameters['doc'],
           ),
+        ),
+        GoRoute(
+          path: driverLevelPath,
+          name: 'driver-level',
+          builder: (context, state) {
+            // Se reutiliza el cubit del panel del conductor (llega en
+            // `extra`); si se abre sin él, se crea y se carga aquí.
+            final extra = state.extra;
+            if (extra is DriverProfileCubit) {
+              return BlocProvider.value(
+                value: extra,
+                child: const DriverLevelScreen(),
+              );
+            }
+            return BlocProvider(
+              create: (_) {
+                final cubit = di.sl<DriverProfileCubit>();
+                final auth = context.read<AuthBloc>().state;
+                if (auth is AuthAuthenticated) cubit.load(auth.user.id);
+                return cubit;
+              },
+              child: const DriverLevelScreen(),
+            );
+          },
         ),
         GoRoute(
           path: driverRejectedDocsPath,

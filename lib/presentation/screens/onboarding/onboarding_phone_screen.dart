@@ -11,9 +11,14 @@ import '../../bloc/auth/auth_state.dart';
 import '../../widgets/onboarding/onboarding_scaffold.dart';
 
 class OnboardingPhoneScreen extends StatefulWidget {
-  const OnboardingPhoneScreen({super.key, required this.name});
+  const OnboardingPhoneScreen({
+    super.key,
+    required this.name,
+    required this.gender,
+  });
 
   final String name;
+  final String gender;
 
   @override
   State<OnboardingPhoneScreen> createState() => _OnboardingPhoneScreenState();
@@ -50,11 +55,18 @@ class _OnboardingPhoneScreenState extends State<OnboardingPhoneScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<AuthBloc, AuthState>(
+      // Sigue montada debajo de las pantallas siguientes; solo reacciona
+      // cuando es la ruta visible (evita SnackBars duplicados).
+      listenWhen: (_, __) => ModalRoute.of(context)?.isCurrent ?? true,
       listener: (context, state) {
         if (state is AuthOtpSent) {
           context.push(
             '/onboarding/code',
-            extra: {'name': widget.name, 'phone': _phoneCtrl.text.trim()},
+            extra: {
+              'name': widget.name,
+              'phone': _phoneCtrl.text.trim(),
+              'gender': widget.gender,
+            },
           );
         } else if (state is AuthError) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -67,19 +79,20 @@ class _OnboardingPhoneScreenState extends State<OnboardingPhoneScreen> {
       },
       builder: (context, state) {
         return OnboardingScaffold(
-          activeStep: 2,
+          activeStep: 3,
           icon: Icons.phone_android_rounded,
-          title: 'Tu número de WhatsApp',
-          subtitle: 'Te enviaremos un código de verificación\npor WhatsApp.',
+          title: 'Tu número de celular',
+          subtitle:
+              'Te enviaremos un código de verificación\npor SMS al número ingresado.',
           buttonText: 'Enviar código',
           isLoading: state is AuthLoading,
           onButtonPressed: _handleContinue,
           content: Row(
             children: [
-              const Text(
+              Text(
                 '+51',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -94,7 +107,10 @@ class _OnboardingPhoneScreenState extends State<OnboardingPhoneScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
                   ],
-                  style: const TextStyle(color: Colors.white, fontSize: 22),
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                    fontSize: 22,
+                  ),
                   textInputAction: TextInputAction.done,
                   decoration: InputDecoration(
                     border: const UnderlineInputBorder(),

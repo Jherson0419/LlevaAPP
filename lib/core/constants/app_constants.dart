@@ -57,8 +57,16 @@ class AppConstants {
     defaultValue: '',
   );
 
+  // Clave de la API de Gemini para generar avatares (ver
+  // AvatarGeneratorService). Vacía = función deshabilitada. Al ir compilada
+  // en la app se puede extraer del APK: restringirla en Google Cloud.
+  static const String geminiApiKey = String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: '',
+  );
+
   // Clave de SharedPreferences que marca si el usuario ya pasó por el flujo
-  // de onboarding — compartida entre SplashScreen (lectura) y
+  // de onboarding — compartida entre AnimatedSplashScreen (lectura) y
   // OnboardingCodeScreen (escritura) para evitar un typo entre archivos.
   static const String onboardingCompleteKey = 'onboarding_complete';
 }

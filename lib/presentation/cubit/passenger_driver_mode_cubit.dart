@@ -41,7 +41,7 @@ class PassengerDriverModeCubit extends Cubit<PassengerDriverUi> {
   }
 }
 
-// --- Reglas compartidas con [AppRouter] y [SplashScreen] ---
+// --- Reglas compartidas con [AppRouter] y [AnimatedSplashScreen] ---
 
 /// Puede alternar entre pedir taxi y trabajar (conductor aprobado con datos).
 bool userCanTogglePassengerDriver(UserEntity u) {

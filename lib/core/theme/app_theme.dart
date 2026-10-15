@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Color principal: Azul eléctrico
-  static const Color primaryBlue = Color(0xFF00D4FF);
+  // Color principal: azul sólido, legible sobre fondo blanco y oscuro
+  static const Color primaryBlue = Color(0xFF0066CC);
   static const Color primaryBlueDark = Color(0xFF00B8E6);
   static const Color primaryBlueLight = Color(0xFF33DDFF);
   

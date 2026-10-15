@@ -3,4 +3,5 @@ enum ClientVehicleCategory {
   standard,
   comfort,
   xl,
+  moto,
 }

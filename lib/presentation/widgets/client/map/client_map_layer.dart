@@ -18,7 +18,17 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/custom_map_markers.dart';
 import '../../../../core/utils/location_helper.dart';
 import '../../../bloc/client_ride/client_ride_bloc.dart';
-import '../map_route_summary_bar.dart';
+import 'center_pin_painter.dart';
+
+/// Valor de `_originIconLabelKey` cuando el ícono de origen ya es el pin
+/// «gota» azul.
+const String _kOriginPinIconKey = 'teardrop-pin';
+
+/// Ídem para el pin rojo de destino.
+const String _kDestPinIconKey = 'teardrop-pin-dest';
+
+/// Pausa entre mostrar origen y destino y empezar a dibujar la ruta.
+const Duration _kRouteRevealDelay = Duration(seconds: 2);
 
 /// Capa de mapa aislada: marcadores, polilíneas y cámara sin `setState` en el dashboard.
 class ClientMapLayer extends StatefulWidget {
@@ -28,12 +38,29 @@ class ClientMapLayer extends StatefulWidget {
     required this.searchPulseController,
     required this.originFocusNode,
     required this.destFocusNode,
+    this.allowPinSelection = true,
+    this.routePadding = EdgeInsets.zero,
+    this.editDestination = false,
   });
 
   final ValueNotifier<bool> mapGestureActiveNotifier;
   final AnimationController searchPulseController;
   final FocusNode originFocusNode;
   final FocusNode destFocusNode;
+
+  /// false = el mapa no fija origen/destino con el pin central (A/B): muestra
+  /// los marcadores y la ruta, y arrastrarlo no cambia el viaje.
+  final bool allowPinSelection;
+
+  /// Zonas tapadas por otros elementos (cabecera, panel inferior) mientras
+  /// se muestra la ruta ([allowPinSelection] en false): el encuadre de origen
+  /// y destino se hace en la parte que queda a la vista. Con el pin activo
+  /// no se aplica, para que el pin siga marcando el centro del mapa.
+  final EdgeInsets routePadding;
+
+  /// Con [allowPinSelection]: true = el pin central marca el destino (rojo)
+  /// en vez del origen; al soltar el mapa se fija el nuevo destino.
+  final bool editDestination;
 
   @override
   State<ClientMapLayer> createState() => _ClientMapLayerState();
@@ -117,7 +144,6 @@ bool _mapAutoFollowEnabled = true;
   bool _isPickupMapMoving = false;
   bool _didInitialPickupAutoZoom = false;
   LatLng? _cameraMoveStartLatLng;
-  bool _isCenteringOnUser = false;
 
   String? _debugLastRideSig;
   bool _wasSearchingDriver = false;
@@ -199,17 +225,20 @@ bool _mapAutoFollowEnabled = true;
 
   /// Ajuste de recojo en mapa (por defecto o sin modo destino activo).
   bool _isOriginMapSelectionEnabled(ClientRideState state) {
-    return state.activeRide == null &&
+    return widget.allowPinSelection &&
+        state.activeRide == null &&
         state.status == ClientRideStatus.initial &&
-        !_destMapPinActive;
+        !_destMapPinActive &&
+        !widget.editDestination;
   }
 
   /// Destino en mapa: activo hasta pulsar «Pedir Lleva» (aunque ya haya coordenadas).
   bool _isDestMapSelectionEnabled(ClientRideState state) {
-    return state.activeRide == null &&
+    return widget.allowPinSelection &&
+        state.activeRide == null &&
         state.status == ClientRideStatus.initial &&
         state.originLatLng != null &&
-        _destMapPinActive;
+        (_destMapPinActive || widget.editDestination);
   }
 
   void _dismissSearchKeyboard() {
@@ -303,21 +332,31 @@ bool _mapAutoFollowEnabled = true;
       final fromOrigin = CustomMapMarkers.streetLabelFromAddress(state.originName);
       if (fromOrigin != 'Buscando…') return fromOrigin;
     }
-    return 'Buscando…';
+    return CenterPinPainter.loadingLabel;
   }
 
+  /// Busca la calle bajo el pin central. Mientras tanto el pin muestra los
+  /// puntos de carga; si Google no devuelve dirección, «Aquí» (antes quedaba
+  /// «Buscando…» para siempre).
   void _scheduleCenterPinReverseGeocode(LatLng target) {
     _reverseGeocodeDebounce?.cancel();
+    if (_centerPinStreetLabel != CenterPinPainter.loadingLabel && mounted) {
+      setState(() => _centerPinStreetLabel = CenterPinPainter.loadingLabel);
+    }
     _reverseGeocodeDebounce = Timer(const Duration(milliseconds: 350), () async {
       final token = ++_reverseGeocodeToken;
+      String? address;
       try {
-        final address = await di.sl<PlacesService>().reverseGeocode(target);
-        if (!mounted || token != _reverseGeocodeToken) return;
-        setState(() {
-          _centerPinStreetLabel =
-              CustomMapMarkers.streetLabelFromAddress(address);
-        });
-      } catch (_) {}
+        address = await di.sl<PlacesService>().reverseGeocode(target);
+      } catch (_) {
+        address = null;
+      }
+      if (!mounted || token != _reverseGeocodeToken) return;
+      setState(() {
+        _centerPinStreetLabel = address == null
+            ? 'Aquí'
+            : CustomMapMarkers.streetLabelFromAddress(address);
+      });
     });
   }
 
@@ -537,54 +576,19 @@ bool _mapAutoFollowEnabled = true;
     }
   }
 
-  Future<void> _goToCurrentLocation() async {
-    if (_isCenteringOnUser) return;
-    setState(() {
-      _isCenteringOnUser = true;
-    });
-    try {
-      final position = await LocationHelper.determinePosition();
-      if (!mounted) return;
-      final currentLatLng = LatLng(position.latitude, position.longitude);
-      _cameraMoveStartLatLng = null;
-      _pickupPreviewLatLng = currentLatLng;
-      _didInitialPickupAutoZoom = true;
-      await _animateMapCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: currentLatLng,
-            zoom: AppConstants.defaultZoom + 3.8,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      context.read<ClientRideBloc>().add(PickupPinMoved(currentLatLng));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo obtener tu ubicación actual'),
-          backgroundColor: AppTheme.errorRed,
-        ),
-      );
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _isCenteringOnUser = false;
-      });
-    }
-  }
-
   Future<void> _loadClientMapIcons(BuildContext context) async {
     BitmapDescriptor? car;
     BitmapDescriptor? origin;
     BitmapDescriptor? dest;
     BitmapDescriptor? myDot;
     try {
-      origin = await CustomMapMarkers.createOriginMarker();
+      // Mismo pin «gota» azul que el pin central de la pestaña Mapa.
+      origin = await CustomMapMarkers.createPinMarker();
     } catch (_) {}
     try {
-      dest = await CustomMapMarkers.createDestMarker();
+      dest = await CustomMapMarkers.createPinMarker(
+        color: CustomMapMarkers.destPinColor,
+      );
     } catch (_) {}
     try {
       car = await CustomMapMarkers.createCarMarker();
@@ -596,7 +600,11 @@ bool _mapAutoFollowEnabled = true;
     setState(() {
       _carIcon = car;
       _originIcon = origin;
+      _originMarkerAnchor = const Offset(0.5, 1.0);
+      if (origin != null) _originIconLabelKey = _kOriginPinIconKey;
       _destIcon = dest;
+      _destMarkerAnchor = const Offset(0.5, 1.0);
+      if (dest != null) _destIconLabelKey = _kDestPinIconKey;
       _myLocationDotIcon = myDot;
     });
     final rideBloc = context.read<ClientRideBloc>();
@@ -619,6 +627,10 @@ bool _mapAutoFollowEnabled = true;
     if (rideState.originLatLng != null) {
       _scheduleCenterPinReverseGeocode(rideState.originLatLng!);
     }
+    // El mapa puede montarse con el origen ya resuelto (el dashboard lo
+    // muestra recién al buscar): sin un cambio de estado posterior nadie
+    // centraría la cámara, así que se sincroniza aquí.
+    _updateMapOverlays(rideState);
   }
 
   void _handleSearchingCameraBehavior(ClientRideState state) {
@@ -873,7 +885,7 @@ bool _mapAutoFollowEnabled = true;
       routePoints: state.routePolyline.length >= 2
           ? state.routePolyline
           : null,
-      padding: 120,
+      padding: _routeFitPadding,
       animated: animated,
     );
     _lastAutoFittedRouteKey = _autoFitRouteKey(state);
@@ -914,12 +926,14 @@ bool _mapAutoFollowEnabled = true;
 
     final controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1050),
+      duration: const Duration(milliseconds: 1200),
     );
     _routeDrawController = controller;
 
     final sampler = _RouteProgressSampler(routePoints);
-    final bounds = _boundsFromLatLngs(origin, destination);
+    // Ruta completa (no solo los extremos): el trazo puede salirse de ellos.
+    final bounds =
+        _boundsFromLatLngList([origin, destination, ...routePoints]);
 
     if (mounted) {
       setState(() {
@@ -928,7 +942,14 @@ bool _mapAutoFollowEnabled = true;
       });
     }
 
-    await _animateMapCamera(CameraUpdate.newLatLngBounds(bounds, 110));
+    await _animateMapCamera(
+      CameraUpdate.newLatLngBounds(bounds, _routeFitPadding),
+    );
+    // Primero se ven solo los dos pines; pasado [_kRouteRevealDelay] se
+    // dibuja la ruta de origen a destino.
+    if (mounted && animToken == _routePreviewAnimToken) {
+      await Future<void>.delayed(_kRouteRevealDelay);
+    }
     if (!mounted || animToken != _routePreviewAnimToken) {
       if (_routeDrawController == controller) {
         controller.dispose();
@@ -938,25 +959,14 @@ bool _mapAutoFollowEnabled = true;
       return;
     }
 
-    var lastPointCount = 0;
+    // Se redibuja en cada cuadro: el sampler interpola la punta dentro del
+    // tramo, así que avanza suave aunque la ruta tenga pocos puntos (antes
+    // solo se actualizaba al cambiar de tramo y avanzaba a saltos).
     void onRouteTick() {
       if (!mounted || animToken != _routePreviewAnimToken) return;
       final eased = Curves.easeInOutCubic.transform(controller.value);
       final partial = sampler.sample(eased);
-      if (partial.length == lastPointCount && eased < 1.0) return;
-      lastPointCount = partial.length;
-      setState(() {
-        _polylines = {
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: partial,
-            color: const Color(0xFF00D4FF),
-            width: 4,
-            zIndex: 1,
-            geodesic: true,
-          ),
-        };
-      });
+      setState(() => _polylines = _routePolylines(partial));
     }
 
     controller.addListener(onRouteTick);
@@ -977,135 +987,75 @@ bool _mapAutoFollowEnabled = true;
     _isAnimatingRoutePreview = false;
     setState(() {
       _markers = markers;
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: routePoints,
-          color: const Color(0xFF00D4FF),
-          width: 4,
-          zIndex: 1,
-          geodesic: true,
-        ),
-      };
+      _polylines = _routePolylines(routePoints);
     });
   }
 
+  /// Ruta del viaje: un halo ancho y translúcido debajo (da relieve) y la
+  /// línea azul sólida encima, con extremos y uniones redondeados.
+  Set<Polyline> _routePolylines(List<LatLng> points) {
+    return {
+      Polyline(
+        polylineId: const PolylineId('route_shadow'),
+        points: points,
+        color: AppTheme.primaryBlue.withValues(alpha: 0.2),
+        width: 12,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+        zIndex: 1,
+        geodesic: true,
+      ),
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: points,
+        color: AppTheme.primaryBlue,
+        width: 6,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+        zIndex: 2,
+        geodesic: true,
+      ),
+    };
+  }
+
   bool _shouldShowRouteSummary(ClientRideState state) {
-    return clientDashboardShouldShowRouteSummary(state);
+    return state.activeRide != null;
   }
 
-  int _etaMinutesFromKm(double distanceKm) {
-    return (distanceKm / 30.0 * 60.0).ceil().clamp(1, 999);
-  }
-
-  double _routeKmForState(ClientRideState state) {
-    final fromDirections = state.routeDistanceKm;
-    if (fromDirections != null && fromDirections > 0) {
-      return fromDirections;
-    }
-    if (state.routePolyline.length > 1) {
-      return _routeDistanceKm(state.routePolyline);
-    }
-    final origin = state.originLatLng;
-    final dest = state.destLatLng;
-    if (origin != null && dest != null) {
-      return LocationHelper.calculateDistance(origin, dest);
-    }
-    return 0;
-  }
-
-  int _etaMinutesForState(ClientRideState state) {
-    final seconds = state.routeDurationSeconds;
-    if (seconds != null && seconds > 0) {
-      return (seconds / 60.0).ceil().clamp(1, 999);
-    }
-    return _etaMinutesFromKm(_routeKmForState(state));
-  }
-
-  double _routeDistanceKm(List<LatLng> points) {
-    if (points.length < 2) return 0;
-    double total = 0;
-    for (int i = 1; i < points.length; i++) {
-      total += LocationHelper.calculateDistance(points[i - 1], points[i]);
-    }
-    return total;
-  }
-
+  /// El marcador de origen es siempre el pin «gota» azul (sin etiqueta: la
+  /// calle va en el panel inferior y en el globo del marcador). Solo se
+  /// genera una vez.
   Future<void> _syncOriginMarkerIcon(ClientRideState state) async {
-    if (state.originLatLng == null || _isMapPinSelectionEnabled(state)) {
-      if (_originIconLabelKey != null) {
-        if (!mounted) return;
-        setState(() {
-          _originIconLabelKey = null;
-        });
-      }
+    if (_originIconLabelKey == _kOriginPinIconKey && _originIcon != null) {
       return;
     }
-
-    final label = CustomMapMarkers.streetLabelFromAddress(state.originName);
-    final key =
-        '${state.originLatLng!.latitude},${state.originLatLng!.longitude}|$label';
-    if (_originIconLabelKey == key && _originIcon != null) return;
-
     try {
-      final asset = await CustomMapMarkers.createOriginMarkerWithLabel(label);
+      final icon = await CustomMapMarkers.createPinMarker();
       if (!mounted) return;
       setState(() {
-        _originIcon = asset.descriptor;
-        _originMarkerAnchor = asset.anchor;
-        _originIconLabelKey = key;
+        _originIcon = icon;
+        _originMarkerAnchor = const Offset(0.5, 1.0);
+        _originIconLabelKey = _kOriginPinIconKey;
       });
     } catch (_) {}
   }
 
+  /// El marcador de destino es el pin «gota» rojo, pareja del azul de
+  /// origen (la distancia y el tiempo van en el panel inferior). Solo se
+  /// genera una vez.
   Future<void> _syncDestMarkerIcon(ClientRideState state) async {
-    if (state.destLatLng == null) {
-      if (_destIconLabelKey != null) {
-        if (!mounted) return;
-        setState(() {
-          _destIconLabelKey = null;
-        });
-      }
-      return;
-    }
-
-    final origin = state.originLatLng;
-    final showRouteInfo = origin != null &&
-        (state.status == ClientRideStatus.readyToRequest ||
-            state.status == ClientRideStatus.searchingDriver ||
-            state.status == ClientRideStatus.requesting ||
-            (state.activeRide == null && !_isMapPinSelectionEnabled(state)));
-
-    late final String key;
-    late final Future<MapMarkerAsset> assetFuture;
-
-    if (showRouteInfo) {
-      final routeKm = _routeKmForState(state);
-      final minutesLine = '${_etaMinutesForState(state)} min';
-      final kmLine = '${routeKm.toStringAsFixed(1)} km';
-      key =
-          '${state.destLatLng!.latitude},${state.destLatLng!.longitude}|'
-          '$minutesLine|$kmLine|route';
-      assetFuture = CustomMapMarkers.createDestMarkerWithRouteInfo(
-        minutesLine: minutesLine,
-        kmLine: kmLine,
-      );
-    } else {
-      final label = CustomMapMarkers.streetLabelFromAddress(state.destName);
-      key =
-          '${state.destLatLng!.latitude},${state.destLatLng!.longitude}|$label|street';
-      assetFuture = CustomMapMarkers.createDestMarkerWithLabel(label);
-    }
-
-    if (_destIconLabelKey == key && _destIcon != null) return;
-
+    if (_destIconLabelKey == _kDestPinIconKey && _destIcon != null) return;
     try {
-      final asset = await assetFuture;
+      final icon = await CustomMapMarkers.createPinMarker(
+        color: CustomMapMarkers.destPinColor,
+      );
       if (!mounted) return;
       setState(() {
-        _destIcon = asset.descriptor;
-        _destMarkerAnchor = asset.anchor;
-        _destIconLabelKey = key;
+        _destIcon = icon;
+        _destMarkerAnchor = const Offset(0.5, 1.0);
+        _destIconLabelKey = _kDestPinIconKey;
       });
     } catch (_) {}
   }
@@ -1141,20 +1091,27 @@ bool _mapAutoFollowEnabled = true;
       _cameraMoveStartLatLng = null;
       _centerPinStreetLabel = null;
     }
+    // Punto ya confirmado que marca el pin central: el destino al editarlo,
+    // si no, el origen.
+    final pinAnchor = _isDestMapSelectionEnabled(state)
+        ? (state.destLatLng ?? state.originLatLng)
+        : state.originLatLng;
     if (state.originLatLng == null) {
       _didInitialPickupAutoZoom = false;
-    } else if (_pickupPreviewLatLng == null ||
-        (!_isPickupMapMoving &&
-            !_latLngAlmostEqual(_pickupPreviewLatLng!, state.originLatLng!))) {
-      // Mantiene el pin centrado sincronizado con el origen real
+    } else if (pinAnchor != null &&
+        (_pickupPreviewLatLng == null ||
+            (!_isPickupMapMoving &&
+                !_latLngAlmostEqual(_pickupPreviewLatLng!, pinAnchor)))) {
+      // Mantiene el pin centrado sincronizado con el punto real
       // (ubicación actual al inicio o cambios confirmados en el bloc).
-      _pickupPreviewLatLng = state.originLatLng;
+      _pickupPreviewLatLng = pinAnchor;
     }
 
     final searchIdleView = _isSearchIdleMapView(state);
 
+    // El pin que no se está editando sigue a la vista.
     if (state.originLatLng != null &&
-        !mapPinSelectionEnabled &&
+        !_isOriginMapSelectionEnabled(state) &&
         !searchIdleView) {
       final originMarkerPosition = state.originLatLng!;
       markers.add(
@@ -1168,14 +1125,21 @@ bool _mapAutoFollowEnabled = true;
               : const Offset(0.5, 1.0),
           icon: _originIcon ??
               BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueGreen,
+                BitmapDescriptor.hueAzure,
               ),
+          infoWindow: InfoWindow(
+            title: (state.originName?.trim().isNotEmpty ?? false)
+                ? state.originName!.split('\n').first.trim()
+                : 'Origen',
+          ),
           zIndexInt: 1002,
         ),
       );
     }
 
-    if (state.destLatLng != null && !searchIdleView && !_destMapPinActive) {
+    if (state.destLatLng != null &&
+        !searchIdleView &&
+        !_isDestMapSelectionEnabled(state)) {
       markers.add(
         Marker(
           markerId: const MarkerId('dest'),
@@ -1235,32 +1199,14 @@ bool _mapAutoFollowEnabled = true;
           );
         } else if (_lastAnimatedRoutePreviewKey == key &&
             !_isAnimatingRoutePreview) {
-          polylines.add(
-            Polyline(
-              polylineId: const PolylineId('route'),
-              points: state.routePolyline,
-              color: const Color(0xFF00D4FF),
-              width: 4,
-              zIndex: 1,
-              geodesic: true,
-            ),
-          );
+          polylines.addAll(_routePolylines(state.routePolyline));
         }
       } else {
         if (_isAnimatingRoutePreview) {
           _cancelRoutePreviewAnimation();
         }
         _lastAnimatedRoutePreviewKey = null;
-        polylines.add(
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: state.routePolyline,
-            color: const Color(0xFF00D4FF),
-            width: 4,
-            zIndex: 1,
-            geodesic: true,
-          ),
-        );
+        polylines.addAll(_routePolylines(state.routePolyline));
       }
     } else {
       if (_isAnimatingRoutePreview) {
@@ -1296,10 +1242,15 @@ bool _mapAutoFollowEnabled = true;
         if (!_didInitialPickupAutoZoom) {
           _didInitialPickupAutoZoom = true;
           _debugLog('[MAP_AUTOFOLLOW] initial pickup autozoom');
+          // Editando el destino, la cámara va al destino actual: así el pin
+          // central arranca sobre él.
+          final target = _isDestMapSelectionEnabled(state)
+              ? (state.destLatLng ?? state.originLatLng!)
+              : state.originLatLng!;
           _animateMapCamera(
             CameraUpdate.newCameraPosition(
               CameraPosition(
-                target: state.originLatLng!,
+                target: target,
                 zoom: AppConstants.defaultZoom + 3.8,
               ),
             ),
@@ -1383,6 +1334,77 @@ bool _mapAutoFollowEnabled = true;
     final label = CustomMapMarkers.streetLabelFromAddress(state.originName);
     if (label == 'Buscando…') return;
     _centerPinStreetLabel = label;
+  }
+
+  /// Alto del pin por encima de su punta (cuerpo + sombra). El encuadre se
+  /// calcula con las coordenadas, que son la punta: sin este margen arriba,
+  /// un pin en el borde superior quedaría tapado por la cabecera.
+  static const double _pinHeadroom = 56;
+
+  /// Padding del GoogleMap: las zonas tapadas solo cuentan con la ruta a la
+  /// vista (sin pin central).
+  EdgeInsets get _effectiveMapPadding => widget.allowPinSelection
+      ? EdgeInsets.zero
+      : widget.routePadding + const EdgeInsets.only(top: _pinHeadroom);
+
+  /// Margen extra alrededor de la ruta al encuadrarla. Con [routePadding] el
+  /// mapa ya excluye cabecera y panel, así que basta un margen moderado.
+  double get _routeFitPadding =>
+      widget.routePadding == EdgeInsets.zero ? 120 : 72;
+
+  @override
+  void didUpdateWidget(covariant ClientMapLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPadding =
+        oldWidget.allowPinSelection
+            ? EdgeInsets.zero
+            : oldWidget.routePadding + const EdgeInsets.only(top: _pinHeadroom);
+    if (oldPadding != _effectiveMapPadding) {
+      // Cambió la zona visible (p. ej. el panel creció al fijar el destino):
+      // se vuelve a encuadrar la ruta cuando el mapa ya aplicó el padding.
+      Future<void>.delayed(const Duration(milliseconds: 150), () {
+        if (!mounted) return;
+        final state = context.read<ClientRideBloc>().state;
+        if (!widget.allowPinSelection &&
+            state.activeRide == null &&
+            state.originLatLng != null &&
+            state.destLatLng != null) {
+          unawaited(_fitRouteOverviewForState(state));
+        }
+      });
+    }
+    if (oldWidget.editDestination != widget.editDestination &&
+        oldWidget.allowPinSelection == widget.allowPinSelection &&
+        widget.allowPinSelection) {
+      // Cambia qué punto marca el pin (origen ↔ destino) sin salir del modo
+      // pin: la cámara vuelve a centrarse en el punto que se edita.
+      _didInitialPickupAutoZoom = false;
+      _mapAutoFollowEnabled = true;
+      _cameraMoveStartLatLng = null;
+      _centerPinStreetLabel = null;
+      _pickupPreviewLatLng = null;
+      scheduleMicrotask(() {
+        if (!mounted) return;
+        _updateMapOverlays(context.read<ClientRideBloc>().state);
+      });
+    }
+    if (oldWidget.allowPinSelection != widget.allowPinSelection) {
+      if (widget.allowPinSelection) {
+        _centerPinStreetLabel = null;
+        _pickupPreviewLatLng = null;
+        // Se reactiva el pin de recojo: la cámara debe volver al origen
+        // antes de que un arrastre lo mueva (si no, el primer gesto lo
+        // llevaría al centro de la vista de ruta).
+        _didInitialPickupAutoZoom = false;
+        _mapAutoFollowEnabled = true;
+        _cameraMoveStartLatLng = null;
+      }
+      // Cambia qué marcadores se dibujan (pin central vs. marcadores A/B).
+      scheduleMicrotask(() {
+        if (!mounted) return;
+        _updateMapOverlays(context.read<ClientRideBloc>().state);
+      });
+    }
   }
 
   @override
@@ -1555,6 +1577,9 @@ bool _mapAutoFollowEnabled = true;
           fit: StackFit.expand,
           children: [
             GoogleMap(
+              // Sin edificios 3D: al acercar se dibujan con lados sombreados
+              // oscuros que rompen el estilo claro.
+              buildingsEnabled: false,
               onMapCreated: _onMapCreated,
               onTap: (_) {
                 if (_isMapPinSelectionEnabled(state)) {
@@ -1602,17 +1627,23 @@ bool _mapAutoFollowEnabled = true;
                       () => TapGestureRecognizer(),
                     ),
                   },
+              padding: _effectiveMapPadding,
               markers: _markers,
               polylines: _polylines,
               circles: _searchCircles,
             ),
+            // Pin «gota» con la punta en el centro exacto del mapa (el punto
+            // que se guarda): azul para el recojo, rojo para el destino.
             if (showCenteredMapPin)
-              IgnorePointer(
-                child: Center(
-                  child: _CenterMapPin(
-                    isDestMode: isDestCenterPin,
-                    isMoving: _isPickupMapMoving,
-                    streetLabel: centerPinLabel,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: CenterPinPainter(
+                      label: centerPinLabel,
+                      color: isDestCenterPin
+                          ? CustomMapMarkers.destPinColor
+                          : AppTheme.primaryBlue,
+                    ),
                   ),
                 ),
               ),
@@ -1687,123 +1718,3 @@ class _SearchingOriginPulse extends StatelessWidget {
   }
 }
 
-class _CenterMapPin extends StatelessWidget {
-  const _CenterMapPin({
-    required this.isDestMode,
-    required this.isMoving,
-    required this.streetLabel,
-  });
-
-  final bool isDestMode;
-  final bool isMoving;
-  final String streetLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final accentColor =
-        isDestMode ? AppTheme.primaryBlue : const Color(0xFF32D74B);
-    final pinLetter = isDestMode ? 'B' : 'A';
-    // Ancla el conjunto (etiqueta + pin) en el centro del mapa.
-    const yOffset = -34.0;
-
-    Widget pinBody = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 220),
-          child: Opacity(
-            opacity: streetLabel.trim().isEmpty ? 0.65 : 1,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xE6121212),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(10),
-                  topRight: Radius.circular(10),
-                ),
-                border: Border.all(
-                  color: accentColor.withValues(alpha: 0.95),
-                  width: 1.8,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Text(
-                streetLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Container(
-          width: 3,
-          height: 3,
-          color: accentColor.withValues(alpha: 0.95),
-        ),
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: const Color(0xFF121212),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-            border: Border.all(
-              color: accentColor,
-              width: 3,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            pinLetter,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: 18,
-          height: 6,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.28),
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-      ],
-    );
-
-    if (isMoving) {
-      pinBody = AnimatedScale(
-        duration: const Duration(milliseconds: 140),
-        scale: 1.02,
-        curve: Curves.easeOutCubic,
-        child: pinBody,
-      );
-    }
-
-    return Transform.translate(
-      offset: const Offset(0, yOffset),
-      child: pinBody,
-    );
-  }
-}

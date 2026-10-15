@@ -73,9 +73,10 @@ class RegisterProfileScreen extends StatefulWidget {
 }
 
 class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
-  static const Color _background = Color(0xFF0A0A0A);
-  static const Color _accent = Color(0xFF00D4FF);
-  static const Color _inactive = Color(0xFF1A1A1A);
+  static const Color _accent = AppTheme.primaryBlue;
+
+  /// Tokens de color del tema activo (claro/oscuro) — ver [AppTheme.of].
+  AppColors get _colors => AppTheme.of(context);
 
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _phoneController;
@@ -205,20 +206,6 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
     super.dispose();
   }
 
-  ThemeData _pickerTheme(BuildContext context) {
-    return Theme.of(context).copyWith(
-      colorScheme: const ColorScheme.dark(
-        primary: AppTheme.primaryBlue,
-        onPrimary: Colors.black,
-        surface: AppTheme.darkSurface,
-        onSurface: AppTheme.darkText,
-      ),
-      dialogTheme: const DialogThemeData(
-        backgroundColor: AppTheme.darkSurface,
-      ),
-    );
-  }
-
   Future<void> _pickClientBirth() async {
     final maxDate = AgeValidation.maxBirthDateForMinimumAge(18);
     final picked = await showDatePicker(
@@ -227,7 +214,6 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
       firstDate: DateTime(1920),
       lastDate: maxDate,
       helpText: 'Mayor de 18 años',
-      builder: (ctx, child) => Theme(data: _pickerTheme(ctx), child: child!),
     );
     if (picked != null) setState(() => _clientBirthDate = picked);
   }
@@ -241,7 +227,6 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
       initialDate: current ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 365 * 15)),
-      builder: (ctx, child) => Theme(data: _pickerTheme(ctx), child: child!),
     );
     if (picked != null) onPicked(picked);
   }
@@ -258,21 +243,21 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: _colors.textSecondary),
           filled: true,
-          fillColor: _inactive,
+          fillColor: _colors.inputFill,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          prefixIcon: Icon(icon, color: Colors.white70),
+          prefixIcon: Icon(icon, color: _colors.textSecondary),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 14),
           child: Text(
             value != null ? _dateFmt.format(value) : 'Toca para elegir fecha',
             style: TextStyle(
-              color: value != null ? Colors.white : Colors.white70,
+              color: value != null ? _colors.textPrimary : _colors.textSecondary,
             ),
           ),
         ),
@@ -437,12 +422,12 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         readOnly: !phoneEditable,
         keyboardType: phoneEditable ? TextInputType.phone : null,
         textInputAction: phoneEditable ? TextInputAction.next : null,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: _colors.textPrimary),
         decoration: InputDecoration(
           labelText: 'Teléfono',
-          labelStyle: const TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: _colors.textSecondary),
           filled: true,
-          fillColor: _inactive,
+          fillColor: _colors.inputFill,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -462,13 +447,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
       TextFormField(
         controller: _nameController,
         readOnly: widget.prefilledName.trim().isNotEmpty,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: _colors.textPrimary),
         textCapitalization: TextCapitalization.words,
         decoration: InputDecoration(
           labelText: 'Nombre completo',
-          labelStyle: const TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: _colors.textSecondary),
           filled: true,
-          fillColor: _inactive,
+          fillColor: _colors.inputFill,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -501,13 +486,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         TextFormField(
           controller: _clientEmailController,
           readOnly: (widget.prefilledEmail?.trim().isNotEmpty ?? false),
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           keyboardType: TextInputType.emailAddress,
           decoration: InputDecoration(
             labelText: 'Correo electrónico',
-            labelStyle: const TextStyle(color: Colors.white70),
+            labelStyle: TextStyle(color: _colors.textSecondary),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -525,7 +510,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _clientDniController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -533,9 +518,9 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
           ],
           decoration: InputDecoration(
             labelText: 'DNI',
-            labelStyle: const TextStyle(color: Colors.white70),
+            labelStyle: TextStyle(color: _colors.textSecondary),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -555,16 +540,16 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
           child: InputDecorator(
             decoration: InputDecoration(
               labelText: 'Fecha de nacimiento',
-              labelStyle: const TextStyle(color: Colors.white70),
+              labelStyle: TextStyle(color: _colors.textSecondary),
               filled: true,
-              fillColor: _inactive,
+              fillColor: _colors.inputFill,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
-              prefixIcon: const Icon(
+              prefixIcon: Icon(
                 Icons.cake_outlined,
-                color: Colors.white70,
+                color: _colors.textSecondary,
               ),
             ),
             child: Padding(
@@ -575,7 +560,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                     : 'Mayor de 18 años — toca para elegir',
                 style: TextStyle(
                   color:
-                      _clientBirthDate != null ? Colors.white : Colors.white70,
+                      _clientBirthDate != null ? _colors.textPrimary : _colors.textSecondary,
                 ),
               ),
             ),
@@ -594,17 +579,17 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverEmailController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           keyboardType: TextInputType.emailAddress,
           decoration: InputDecoration(
             labelText: 'Correo electrónico',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.email_outlined,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -622,7 +607,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverDniController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -630,13 +615,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
           ],
           decoration: InputDecoration(
             labelText: 'DNI',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.badge_outlined,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -654,17 +639,17 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverCarBrandController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           textCapitalization: TextCapitalization.words,
           decoration: InputDecoration(
             labelText: 'Marca del vehículo',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.directions_car_outlined,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -676,17 +661,17 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverCarModelController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           textCapitalization: TextCapitalization.words,
           decoration: InputDecoration(
             labelText: 'Modelo del vehículo',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.directions_car,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -698,20 +683,20 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverCarPlateController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           textCapitalization: TextCapitalization.characters,
           inputFormatters: [
             LengthLimitingTextInputFormatter(12),
           ],
           decoration: InputDecoration(
             labelText: 'Placa',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.pin,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -723,7 +708,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverCarYearController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -732,16 +717,14 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
           decoration: InputDecoration(
             labelText: 'Año de fabricación',
             hintText: '2005 o posterior',
-            hintStyle: TextStyle(
-              color: Colors.white70.withValues(alpha: 0.65),
-            ),
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            hintStyle: TextStyle(color: _colors.textSecondary),
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.calendar_month_outlined,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -797,28 +780,28 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         DropdownButtonFormField<String>(
           // ignore: deprecated_member_use
           value: _driverLicenseCategory,
-          dropdownColor: _inactive,
-          style: const TextStyle(
-            color: Colors.white,
+          dropdownColor: _colors.surface,
+          style: TextStyle(
+            color: _colors.textPrimary,
             fontSize: 16,
           ),
           decoration: InputDecoration(
             labelText: 'Categoría de licencia',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.category_outlined,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
             ),
           ),
-          hint: const Text(
+          hint: Text(
             'Selecciona categoría',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: _colors.textSecondary),
           ),
           items: _kLicenseCategories
               .map(
@@ -837,16 +820,16 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _driverLicenseNumberController,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _colors.textPrimary),
           decoration: InputDecoration(
             labelText: 'Número de brevete',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(
+            labelStyle: TextStyle(color: _colors.textSecondary),
+            prefixIcon: Icon(
               Icons.credit_card,
-              color: Colors.white70,
+              color: _colors.textSecondary,
             ),
             filled: true,
-            fillColor: _inactive,
+            fillColor: _colors.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -880,11 +863,13 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthAuthenticated) {
+          // NewUserSplashScreen va directo al dashboard cuando ya hay sesión
+          // con perfil (no vuelve a pedir correo/DNI).
           context.go(
-            '/welcome',
+            '/splash/new-user',
             extra: {
               'userName': state.user.fullName,
-              'isNewUser': true,
+              'phone': state.user.phone,
             },
           );
         }
@@ -902,7 +887,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
         return Stack(
           children: [
             Scaffold(
-              backgroundColor: _background,
+              backgroundColor: _colors.background,
               appBar: AppBar(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
@@ -927,7 +912,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                                 .textTheme
                                 .displaySmall
                                 ?.copyWith(
-                                  color: Colors.white,
+                                  color: _colors.textPrimary,
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),
@@ -940,7 +925,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                                   .textTheme
                                   .bodyMedium
                                   ?.copyWith(
-                                    color: Colors.white70,
+                                    color: _colors.textSecondary,
                                   ),
                             ),
                           if (_isClientFlowLocked && _hasCompleteClientPackage)
@@ -950,7 +935,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                                   .textTheme
                                   .bodyMedium
                                   ?.copyWith(
-                                    color: Colors.white70,
+                                    color: _colors.textSecondary,
                                   ),
                             ),
                           const SizedBox(height: 16),
@@ -975,7 +960,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                             onPressed: isLoading ? null : _submit,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _accent,
-                              foregroundColor: Colors.black,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 18),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -989,7 +974,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.black,
+                                        Colors.white,
                                       ),
                                     ),
                                   )
@@ -1016,7 +1001,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                 right: 0,
                 top: 0,
                 child: Material(
-                  color: _background,
+                  color: _colors.background,
                   elevation: 4,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1026,7 +1011,7 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                         value: uploadState.total > 0
                             ? uploadState.completed / uploadState.total
                             : null,
-                        backgroundColor: _inactive,
+                        backgroundColor: _colors.surfaceVariant,
                         color: _accent,
                         minHeight: 6,
                       ),
@@ -1037,8 +1022,8 @@ class _RegisterProfileScreenState extends State<RegisterProfileScreen> {
                         ),
                         child: Text(
                           'Subiendo documentos ${uploadState.completed}/${uploadState.total}…',
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: _colors.textSecondary,
                             fontSize: 13,
                           ),
                           textAlign: TextAlign.center,

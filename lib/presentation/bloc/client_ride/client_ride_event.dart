@@ -7,15 +7,6 @@ abstract class ClientRideEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class OriginTextChanged extends ClientRideEvent {
-  final String text;
-
-  const OriginTextChanged(this.text);
-
-  @override
-  List<Object?> get props => [text];
-}
-
 class DestTextChanged extends ClientRideEvent {
   final String text;
 
@@ -23,16 +14,6 @@ class DestTextChanged extends ClientRideEvent {
 
   @override
   List<Object?> get props => [text];
-}
-
-class OriginSelected extends ClientRideEvent {
-  final String placeId;
-  final String description;
-
-  const OriginSelected(this.placeId, this.description);
-
-  @override
-  List<Object?> get props => [placeId, description];
 }
 
 class DestSelected extends ClientRideEvent {
@@ -45,9 +26,34 @@ class DestSelected extends ClientRideEvent {
   List<Object?> get props => [placeId, description];
 }
 
+/// Destino elegido con nombre y coordenadas ya conocidos (p. ej. un lugar
+/// sugerido): no pasa por PlacesService.
+class DestCoordinatesSelected extends ClientRideEvent {
+  final String name;
+  final double lat;
+  final double lng;
+
+  const DestCoordinatesSelected({
+    required this.name,
+    required this.lat,
+    required this.lng,
+  });
+
+  @override
+  List<Object?> get props => [name, lat, lng];
+}
+
 /// Inicializa el punto de recojo con la ubicación actual del pasajero.
+///
+/// Con [askPermission] en false no muestra el diálogo de permiso: si falta,
+/// se marca [ClientRideState.locationDenied] y la UI ofrece activarlo.
 class InitializePickupFromCurrentLocation extends ClientRideEvent {
-  const InitializePickupFromCurrentLocation();
+  const InitializePickupFromCurrentLocation({this.askPermission = true});
+
+  final bool askPermission;
+
+  @override
+  List<Object?> get props => [askPermission];
 }
 
 /// Mueve el punto de recojo a nuevas coordenadas elegidas en el mapa.
@@ -70,13 +76,22 @@ class DestPinMoved extends ClientRideEvent {
   List<Object?> get props => [position];
 }
 
+/// Intercambia origen y destino (coordenadas y nombres) y recalcula la ruta.
+class SwapOriginDestination extends ClientRideEvent {
+  const SwapOriginDestination();
+}
+
 class PriceChanged extends ClientRideEvent {
   final double price;
 
-  const PriceChanged(this.price);
+  /// true = además de fijar la oferta, cambia a la categoría de vehículo
+  /// cuya tarifa sugerida queda más cerca del nuevo precio (paso 3).
+  final bool autoSelectCategory;
+
+  const PriceChanged(this.price, {this.autoSelectCategory = false});
 
   @override
-  List<Object?> get props => [price];
+  List<Object?> get props => [price, autoSelectCategory];
 }
 
 class VehicleCategoryChanged extends ClientRideEvent {
@@ -86,26 +101,6 @@ class VehicleCategoryChanged extends ClientRideEvent {
 
   @override
   List<Object?> get props => [category];
-}
-
-/// Vuelve a elegir origen (mantiene destino). Panel inferior muestra búsqueda.
-class StartEditingOrigin extends ClientRideEvent {
-  const StartEditingOrigin();
-}
-
-/// Vuelve a elegir destino (mantiene origen).
-class StartEditingDest extends ClientRideEvent {
-  const StartEditingDest();
-}
-
-/// Vuelve a la pantalla de búsqueda (origen/destino y menú).
-class BackToSearchPanel extends ClientRideEvent {
-  const BackToSearchPanel();
-}
-
-/// Abre el panel de tarifa / preferencias tras confirmar origen y destino.
-class ProceedToReadyToRequest extends ClientRideEvent {
-  const ProceedToReadyToRequest();
 }
 
 class RidePreferencesChanged extends ClientRideEvent {
@@ -153,35 +148,8 @@ class RideStatusUpdated extends ClientRideEvent {
   List<Object?> get props => [ride];
 }
 
-/// Eventos usados por widgets legacy (no usados en el dashboard principal).
-class StartSearch extends ClientRideEvent {
-  const StartSearch();
-}
-
 class CancelRide extends ClientRideEvent {
   const CancelRide();
-}
-
-class CalculateRoute extends ClientRideEvent {
-  final String origin;
-  final String destination;
-
-  const CalculateRoute({
-    required this.origin,
-    required this.destination,
-  });
-
-  @override
-  List<Object?> get props => [origin, destination];
-}
-
-class SubmitOffer extends ClientRideEvent {
-  final double offerPrice;
-
-  const SubmitOffer({required this.offerPrice});
-
-  @override
-  List<Object?> get props => [offerPrice];
 }
 
 class AcceptDriverOffer extends ClientRideEvent {

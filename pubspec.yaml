@@ -1,7 +1,7 @@
 name: lleva
 description: Aplicación de taxi para Trujillo, Perú - Comisiones justas para conductores
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -37,11 +37,16 @@ dependencies:
   supabase_flutter: ^2.5.0
   shared_preferences: ^2.5.4
   image_picker: ^1.1.2
+  path_provider: ^2.1.0
+  permission_handler: ^11.3.0
   flutter_polyline_points: ^3.1.0
   rxdart: ^0.28.0
 
   # Autenticación social
   google_sign_in: ^6.2.1
+
+  # Video (fondo del login)
+  video_player: ^2.9.1
 
 dev_dependencies:
   flutter_test:
@@ -54,4 +59,5 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - assets/film/
     - assets/map_style.json

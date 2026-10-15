@@ -23,11 +23,14 @@ import 'auth_state.dart';
 /// el código de verificación '000000' evita la llamada real a
 /// `Supabase.auth.verifyOTP` y resuelve directamente si el teléfono ya tiene
 /// perfil (login) o si necesita registro — ver [AuthBloc._onDevBypassOtpVerified].
-/// Desactivado por defecto; actívalo explícitamente con
-/// `--dart-define=DEV_MODE=true`. Sin sesión real de Supabase Auth, cualquier
+/// Con [kDevMode] activo tampoco se envía el SMS (ver
+/// [AuthBloc._onSendOtpRequested]).
+/// ACTIVADO por defecto: cualquier build sin `--dart-define=DEV_MODE=false`
+/// (incluido release) permite entrar con cualquier teléfono usando '000000'.
+/// Desactívalo antes de publicar. Sin sesión real de Supabase Auth, cualquier
 /// operación que dependa de `auth.uid()` (RLS) fallará para un usuario
 /// "logueado" por este atajo — solo sirve para navegar la UI en pruebas.
-const bool kDevMode = bool.fromEnvironment('DEV_MODE', defaultValue: false);
+const bool kDevMode = bool.fromEnvironment('DEV_MODE', defaultValue: true);
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final UserRepository _userRepository;
@@ -87,6 +90,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     SendOtpRequested event,
     Emitter<AuthState> emit,
   ) async {
+    if (kDevMode) {
+      emit(AuthOtpSent(event.phone));
+      return;
+    }
     try {
       emit(const AuthLoading());
       await _supabase.auth.signInWithOtp(phone: _toE164(event.phone));
@@ -373,6 +380,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       email: base.email,
       dni: base.dni,
       birthDate: base.birthDate,
+      gender: base.gender,
       isDriverApplicant: true,
     );
 
@@ -478,28 +486,72 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final mail = event.email?.trim() ?? '';
         final doc = event.dni?.trim() ?? '';
 
-        if (full.length < 5) {
-          emit(const AuthError('Ingresa nombre y apellidos completos'));
+        // El onboarding con Google solo pide el nombre (sin apellidos).
+        if (full.length < 2) {
+          emit(const AuthError('Ingresa tu nombre'));
           return;
         }
         if (mail.isEmpty || !mail.contains('@') || !mail.contains('.')) {
           emit(const AuthError('Ingresa un correo electrónico válido'));
           return;
         }
-        if (doc.length != 8 || int.tryParse(doc) == null) {
+        // El onboarding simplificado (nombre + correo) no pide DNI ni fecha
+        // de nacimiento: solo se validan cuando vienen.
+        if (doc.isNotEmpty && (doc.length != 8 || int.tryParse(doc) == null)) {
           emit(const AuthError('El DNI debe tener 8 dígitos'));
           return;
         }
-        if (event.birthDate == null) {
-          emit(const AuthError('Selecciona tu fecha de nacimiento'));
-          return;
-        }
-        if (!AgeValidation.isAtLeastYearsOld(event.birthDate!, 18)) {
+        if (event.birthDate != null &&
+            !AgeValidation.isAtLeastYearsOld(event.birthDate!, 18)) {
           emit(const AuthError(
             'Debes tener al menos 18 años para crear una cuenta',
           ));
           return;
         }
+      }
+
+      // Sin teléfono (alta con Google) el perfil se identifica por el
+      // correo: `profiles.phone` es NOT NULL y es la clave de búsqueda, así
+      // que se guarda un marcador único derivado del correo. Aquí no hay
+      // verificación por SMS; la sesión es la de Google.
+      var phone = event.phone.trim();
+      if (phone.isEmpty) {
+        final mail = (event.email ?? '').trim().toLowerCase();
+        if (mail.isEmpty) {
+          emit(const AuthError('Ingresa un correo electrónico válido'));
+          return;
+        }
+        phone = _phonePlaceholderForEmail(
+          mail,
+          _supabase.auth.currentUser?.id,
+        );
+      }
+
+      // Duplicados, antes de subir documentos o crear el perfil. Un correo o
+      // teléfono ya registrado no inicia sesión aquí: conocer el dato de
+      // alguien no puede bastar para entrar a su cuenta.
+      emit(const AuthLoading());
+      final email = event.email?.trim() ?? '';
+      if (email.isNotEmpty &&
+          await _userRepository.existsProfileWithEmail(email)) {
+        emit(
+          const AuthError('Ya existe una cuenta con este correo electrónico.'),
+        );
+        return;
+      }
+      // El marcador `g_…`/`email_…` se deriva del correo: si ya existe, el
+      // duplicado es el correo, no un teléfono.
+      final isPlaceholderPhone =
+          phone.startsWith('g_') || phone.startsWith('email_');
+      if (await _userRepository.existsProfileWithPhone(phone)) {
+        emit(
+          AuthError(
+            isPlaceholderPhone
+                ? 'Ya existe una cuenta con este correo electrónico.'
+                : 'Ya existe una cuenta con este número de teléfono.',
+          ),
+        );
+        return;
       }
 
       String? dniFrontUrl = event.dniFrontUrl?.trim();
@@ -618,7 +670,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final authUid = _supabase.auth.currentUser?.id;
       final user = UserModel(
         id: (authUid != null && authUid.isNotEmpty) ? authUid : 'temporal',
-        phone: event.phone,
+        phone: phone,
         role: event.role,
         fullName: event.fullName.trim(),
         email: isDriver
@@ -626,7 +678,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             : (event.role == 'client' ? event.email!.trim() : null),
         dni: isDriver
             ? event.dni!.trim()
-            : (event.role == 'client' ? event.dni!.trim() : null),
+            : (event.role == 'client' ? _nullIfBlank(event.dni) : null),
         carPlate: isDriver ? event.carPlate!.trim() : null,
         carBrand: isDriver ? event.carBrand!.trim() : null,
         carModel: isDriver ? event.carModel!.trim() : null,
@@ -641,6 +693,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         licenseCategory: isDriver ? event.licenseCategory!.trim() : null,
         licenseNumber: isDriver ? event.licenseNumber!.trim() : null,
         birthDate: event.role == 'client' ? event.birthDate : null,
+        gender: event.gender,
         dniFrontUrl: isDriver ? dniFrontUrl : null,
         dniBackUrl: isDriver ? dniBackUrl : null,
         licenseUrl: isDriver ? licenseUrl : null,
@@ -674,6 +727,34 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       emit(AuthError('Ocurrió un error al crear el perfil'));
     }
+  }
+
+  static const int _phonePlaceholderMaxLength = 20;
+
+  /// Marcador para `profiles.phone` de una cuenta sin teléfono:
+  /// `g_<correo con los símbolos como _>`, de 20 caracteres como máximo.
+  ///
+  /// Recortar sin más haría coincidir correos que empiezan igual
+  /// (`...castillo@gmail.com` y `...castillo2@gmail.com`), y como el perfil
+  /// se busca por este campo, uno vería los datos del otro. Por eso, cuando
+  /// hay que recortar, el final se completa con el id de la sesión
+  /// ([authUid]), que es único por cuenta.
+  static String _phonePlaceholderForEmail(String email, String? authUid) {
+    final base = 'g_${email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
+    if (base.length <= _phonePlaceholderMaxLength) return base;
+    final uid = (authUid ?? '').replaceAll('-', '');
+    if (uid.length < 8) return base.substring(0, _phonePlaceholderMaxLength);
+    const suffixLength = 8;
+    final head = base.substring(
+      0,
+      _phonePlaceholderMaxLength - suffixLength - 1,
+    );
+    return '${head}_${uid.substring(0, suffixLength)}';
+  }
+
+  static String? _nullIfBlank(String? value) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   static bool _driverUsesLocalDocPaths(RegisterUser e) {

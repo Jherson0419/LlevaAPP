@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 
-/// Layout compartido por las 4 pantallas de onboarding (bienvenida, nombre,
-/// teléfono, código): puntos de progreso, ícono, título/subtítulo, un slot
+/// Layout compartido por las pantallas de onboarding (nombre, género, teléfono,
+/// código, correo, DNI, fecha de nacimiento): puntos de progreso, ícono, título/subtítulo, un slot
 /// opcional de contenido (campo de texto, fila de teléfono, casillas OTP) y
-/// el botón principal.
+/// el botón principal. La bienvenida tiene su propio layout animado pero
+/// usa el mismo [totalSteps].
 class OnboardingScaffold extends StatelessWidget {
   const OnboardingScaffold({
     super.key,
@@ -19,7 +20,10 @@ class OnboardingScaffold extends StatelessWidget {
     this.isLoading = false,
   });
 
-  static const int totalSteps = 4;
+  /// Nombre → avatar → correo (el avatar dibuja su propio indicador). Las
+  /// pantallas que ya no están en el flujo (género, teléfono, código, DNI,
+  /// nacimiento) conservan su `activeStep` antiguo, fuera de este rango.
+  static const int totalSteps = 3;
 
   final int activeStep;
   final IconData icon;
@@ -33,9 +37,9 @@ class OnboardingScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.darkBackground,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: AppTheme.darkBackground,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
       ),
       body: SafeArea(
@@ -66,8 +70,8 @@ class OnboardingScaffold extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
                 ),

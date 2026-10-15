@@ -13,35 +13,40 @@ class ThemeCubit extends Cubit<ThemeMode> {
     _loadSavedTheme();
   }
 
+  ThemeCubit._withInitial(super.initial);
+
   static const _prefsKey = 'theme_mode';
 
-  /// Crea el cubit con la preferencia ya cargada antes de devolverlo — evita
+  /// Crea el cubit con la preferencia ya leída como estado inicial — evita
   /// el parpadeo de mostrar el modo por defecto y luego cambiarlo cuando
-  /// SharedPreferences resuelve. Útil si en el futuro `main()` pasa a
-  /// esperar este future antes de `runApp()`; el registro actual en DI usa
-  /// el constructor normal (ver Parte 3), que carga de forma asíncrona.
+  /// SharedPreferences resuelve. `main()` espera este future antes de
+  /// `runApp()` y reemplaza con esta instancia el registro de DI.
   static Future<ThemeCubit> create() async {
-    final cubit = ThemeCubit();
-    await cubit._loadSavedTheme();
-    return cubit;
+    return ThemeCubit._withInitial(await _readSavedMode());
   }
 
-  Future<void> _loadSavedTheme() async {
+  static Future<ThemeMode> _readSavedMode() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(_prefsKey);
-      final mode = switch (saved) {
-        'light' => ThemeMode.light,
-        'dark' => ThemeMode.dark,
-        'system' => ThemeMode.system,
-        _ => null,
-      };
-      if (mode != null && mode != state) {
-        emit(mode);
+      final saved = prefs.getString(_prefsKey) ?? 'light';
+      switch (saved) {
+        case 'dark':
+          return ThemeMode.dark;
+        case 'system':
+          return ThemeMode.system;
+        default:
+          return ThemeMode.light;
       }
     } catch (_) {
       // Sin preferencia legible: se mantiene el modo por defecto (light).
+      return ThemeMode.light;
     }
+  }
+
+  Future<void> _loadSavedTheme() async {
+    final mode = await _readSavedMode();
+    if (isClosed) return;
+    if (mode != state) emit(mode);
   }
 
   Future<void> setLight() => _setMode(ThemeMode.light);

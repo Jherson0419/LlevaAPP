@@ -3,8 +3,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class LocationHelper {
   /// Determina la posición actual del dispositivo
-  /// Verifica permisos y servicios de ubicación antes de obtener la posición
-  static Future<Position> determinePosition() async {
+  /// Verifica permisos y servicios de ubicación antes de obtener la posición.
+  /// Con [requestIfDenied] en false no muestra el diálogo de permiso: si aún
+  /// no está concedido, falla igual que si se hubiera negado.
+  static Future<Position> determinePosition({
+    bool requestIfDenied = true,
+  }) async {
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -19,6 +23,9 @@ class LocationHelper {
     // Verificar permisos
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
+      if (!requestIfDenied) {
+        throw Exception('Permiso de ubicación no concedido.');
+      }
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         throw Exception(

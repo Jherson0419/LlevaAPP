@@ -10,6 +10,12 @@ class ClientRidePricing {
   /// S/ por kilómetro (sobre la tarifa base fija).
   static const double routePerKm = 1.80;
 
+  /// Tarifa base fija (S/) de la categoría moto.
+  static const double motoBaseFare = 2.0;
+
+  /// S/ por kilómetro de la categoría moto.
+  static const double motoPerKm = 1.20;
+
   /// El pasajero no puede ofertar más de [maxDiscountBelowSuggested] por debajo
   /// de la tarifa sugerida (categoría + extras).
   static const double maxDiscountBelowSuggested = 2.0;
@@ -31,9 +37,21 @@ class ClientRidePricing {
     return double.parse(price.toStringAsFixed(2));
   }
 
-  /// Recargo por categoría (sobre la tarifa base por distancia).
+  /// Tarifa de moto para la misma distancia que produjo [base] (la tarifa
+  /// estándar): se despeja la distancia y se aplica la tarifa propia de moto.
+  static double motoBaseFromStandardBase(double base) {
+    final distanceKm =
+        ((base - routeBaseFare) / routePerKm).clamp(0.0, double.infinity);
+    final price = motoBaseFare + (distanceKm * motoPerKm);
+    return double.parse(price.toStringAsFixed(2));
+  }
+
+  /// Ajuste por categoría (sobre la tarifa base por distancia). Es un recargo
+  /// para confort y XL, y un descuento (valor negativo) para moto.
   static double categoryExtra(ClientVehicleCategory category, double base) {
     switch (category) {
+      case ClientVehicleCategory.moto:
+        return motoBaseFromStandardBase(base) - base;
       case ClientVehicleCategory.standard:
         return 0;
       case ClientVehicleCategory.comfort:

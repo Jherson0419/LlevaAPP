@@ -72,7 +72,11 @@ lib/
 The `negotiating` status exists for legacy data; current flow keeps rides in `searching` while driver counter-offers are stored in the `ride_offers` table.
 
 **Client UI states** (`ClientRideStatus` enum):
-`initial` → `readyToRequest` → `requesting` → `searchingDriver` → `driverAssigned` → `driverArrived` → `tripOngoing` → `tripFinished`
+`initial` → `requesting` → `searchingDriver` → `driverAssigned` → `driverArrived` → `tripOngoing` → `tripFinished`
+
+`readyToRequest` and `negotiating` remain in the enum but are no longer emitted: the request is built in the step screens (destination on the dashboard → `PaymentStepScreen` → `VehicleStepScreen`) and submitted from there.
+
+**Ride screen**: `SearchingDriverScreen` shows the whole ride, from `requesting` to `tripFinished` (search, driver offers, driver on the way / arrived, trip ongoing, final summary). `ClientDashboardScreen` pushes it whenever the bloc is not idle (`_openRideScreen`) — after "Pedir Lleva" and when `CheckActiveRide` recovers a ride on app start — and the screen closes itself (`closeRideFlow`) once there is no ride. The Mapa tab is `_MapTabView` in the dashboard file (free map with a center pin and "Pedir taxi aquí", which jumps to the destination search); `ClientMapLayer` is only used by the destination search flow. Non-fatal failures (accept/reject offer, boost price, cancel) keep the ride status and only set `errorMessage`, which the ride screen shows as a snackbar; `status == error` means there is no ride.
 
 **Negotiation flow**: Driver submits an offer to `ride_offers` table. `ClientRideBloc` polls this table every 2 seconds (plus a Supabase Realtime stream). Client accepts via `accept_ride_offer` Supabase RPC (falls back to sequential updates if RPC fails).
 
@@ -91,6 +95,7 @@ The custom dark map style is in `assets/map_style.json`.
 `lib/core/utils/client_ride_pricing.dart`:
 - Base fare: **S/ 3.00 + S/ 1.80/km**
 - Vehicle category extras: Comfort +10% of base, XL +22% of base
+- Moto: own fare, **S/ 2.00 + S/ 1.20/km**, no percentage extra
 - Options extras: >4 passengers +S/2, baby seat +S/1.50, pet +S/1.50
 - Maximum discount below suggested: S/ 2.00
 - Driver commission: 10% (calculated client-side in `DriverRepositoryImpl`, not a DB column)

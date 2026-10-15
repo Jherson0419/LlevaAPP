@@ -25,6 +25,7 @@ class UserEntity extends Equatable {
   final String? licenseCategory;
   final String? licenseNumber;
   final DateTime? birthDate;
+  final String? gender; // 'male' | 'female' | 'other'
   final String? dniFrontUrl;
   final String? dniBackUrl;
   final String? licenseUrl;
@@ -58,6 +59,7 @@ class UserEntity extends Equatable {
     this.licenseCategory,
     this.licenseNumber,
     this.birthDate,
+    this.gender,
     this.dniFrontUrl,
     this.dniBackUrl,
     this.licenseUrl,
@@ -93,6 +95,7 @@ class UserEntity extends Equatable {
         licenseCategory,
         licenseNumber,
         birthDate,
+        gender,
         dniFrontUrl,
         dniBackUrl,
         licenseUrl,

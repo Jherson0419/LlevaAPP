@@ -27,6 +27,26 @@ abstract class UserRepository {
   /// Devuelve el usuario creado o null si falla la inserción.
   Future<UserEntity?> createUserProfile(UserEntity user);
 
+  /// true si ya hay un perfil con ese correo (sin distinguir mayúsculas en
+  /// el dominio ni en el usuario si se guardó en minúsculas).
+  ///
+  /// Con la política RLS `profiles_select_own_row` (002_fix_profiles_rls.sql)
+  /// la app solo ve su propia fila, así que esta consulta no encuentra las de
+  /// otros usuarios: la garantía real es un índice único en la base.
+  Future<bool> existsProfileWithEmail(String email);
+
+  /// true si ya hay un perfil con ese teléfono. Misma limitación de RLS que
+  /// [existsProfileWithEmail].
+  Future<bool> existsProfileWithPhone(String phone);
+
+  /// Guarda en `profiles.profile_pic_url` la foto de perfil del usuario
+  /// [userId]. [storagePath] es la ruta devuelta por StorageService.uploadImage
+  /// (no una URL). Devuelve false si no se actualizó ninguna fila.
+  Future<bool> updateProfilePicture({
+    required String userId,
+    required String storagePath,
+  });
+
   /// Guarda la sesión del usuario (teléfono) en almacenamiento local.
   Future<void> saveUserSession(String phone);
 

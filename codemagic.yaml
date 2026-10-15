@@ -21,6 +21,7 @@ workflows:
           GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID
           SUPABASE_REDIRECT_URL=$SUPABASE_REDIRECT_URL
           REVERSED_CLIENT_ID=$REVERSED_CLIENT_ID
+          DEV_MODE=false
           EOF
 
       - name: Get Flutter packages

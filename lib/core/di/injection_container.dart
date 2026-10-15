@@ -15,7 +15,10 @@ import '../../presentation/bloc/driver_stats/driver_stats_cubit.dart';
 import '../../presentation/bloc/driver_status/driver_status_bloc.dart';
 import '../../presentation/bloc/driver_wallet/driver_wallet_cubit.dart';
 import '../../presentation/bloc/ride_history/ride_history_cubit.dart';
+import '../../presentation/bloc/driver_profile/driver_profile_cubit.dart';
+import '../../presentation/bloc/top_drivers/top_drivers_cubit.dart';
 import '../services/places_service.dart';
+import '../services/avatar_generator_service.dart';
 import '../services/storage_service.dart';
 
 final sl = GetIt.instance;
@@ -28,6 +31,9 @@ Future<void> initDI() async {
   // Servicios
   sl.registerLazySingleton<PlacesService>(PlacesService.new);
   sl.registerLazySingleton<StorageService>(() => StorageService(sl()));
+  sl.registerLazySingleton<AvatarGeneratorService>(
+    () => AvatarGeneratorService(),
+  );
 
   // Repositorios
   sl.registerLazySingleton<UserRepository>(() => UserRepositoryImpl());
@@ -67,5 +73,11 @@ Future<void> initDI() async {
   );
   sl.registerFactory<RideHistoryCubit>(
     () => RideHistoryCubit(rideRepository: sl()),
+  );
+  sl.registerFactory<TopDriversCubit>(
+    () => TopDriversCubit(sl<DriverRepository>()),
+  );
+  sl.registerFactory<DriverProfileCubit>(
+    () => DriverProfileCubit(sl<DriverRepository>(), sl<RideRepository>()),
   );
 }

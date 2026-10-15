@@ -49,6 +49,13 @@ Future<void> main() async {
 
   await di.initDI();
 
+  // Se lee la preferencia de tema antes de runApp() para que el primer frame
+  // ya salga con el modo guardado (sin parpadeo claro→oscuro); la instancia
+  // ya cargada reemplaza al registro por defecto de initDI().
+  final themeCubit = await ThemeCubit.create();
+  di.sl.unregister<ThemeCubit>();
+  di.sl.registerLazySingleton<ThemeCubit>(() => themeCubit);
+
   // El estilo de la barra de sistema (iconos claros/oscuros) ahora se aplica
   // de forma dinámica según ThemeCubit — ver _applySystemOverlayStyle,
   // llamado dentro de LlevaApp.build() cada vez que cambia el modo.

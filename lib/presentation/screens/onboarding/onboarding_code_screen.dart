@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,16 +10,19 @@ import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_event.dart';
 import '../../bloc/auth/auth_state.dart';
 import '../../widgets/onboarding/onboarding_scaffold.dart';
+import '../../widgets/otp_code_box.dart';
 
 class OnboardingCodeScreen extends StatefulWidget {
   const OnboardingCodeScreen({
     super.key,
     required this.name,
     required this.phone,
+    required this.gender,
   });
 
   final String name;
   final String phone;
+  final String gender;
 
   @override
   State<OnboardingCodeScreen> createState() => _OnboardingCodeScreenState();
@@ -91,18 +93,28 @@ class _OnboardingCodeScreenState extends State<OnboardingCodeScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<AuthBloc, AuthState>(
+      // Esta pantalla sigue montada debajo de correo/DNI; sin este filtro
+      // reaccionaría también al AuthAuthenticated/AuthError del registro
+      // final (ver OnboardingDniScreen).
+      listenWhen: (_, __) => ModalRoute.of(context)?.isCurrent ?? true,
       listener: (context, state) async {
         if (state is AuthAuthenticated) {
+          // Teléfono con perfil existente: es un login, no un registro.
           await _markOnboardingComplete();
           if (!context.mounted) return;
           context.go(
-            '/welcome',
-            extra: {'userName': widget.name, 'isNewUser': true},
+            '/splash/returning-user',
+            extra: {'userName': state.user.fullName},
           );
         } else if (state is AuthNeedsRegistration) {
-          context.push(
-            '/register',
-            extra: {'phone': state.phone, 'name': widget.name},
+          // El splash de bienvenida continúa luego a /onboarding/email.
+          context.go(
+            '/splash/new-user',
+            extra: {
+              'userName': widget.name,
+              'phone': widget.phone,
+              'gender': widget.gender,
+            },
           );
         } else if (state is AuthError) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -116,44 +128,38 @@ class _OnboardingCodeScreenState extends State<OnboardingCodeScreen> {
       },
       builder: (context, state) {
         return OnboardingScaffold(
-          activeStep: 3,
+          activeStep: 4,
           icon: Icons.mark_chat_read_outlined,
           title: 'Código de verificación',
           subtitle: 'Ingresa el código que enviamos\nal +51 ${widget.phone}',
           buttonText: 'Verificar',
           isLoading: state is AuthLoading,
           onButtonPressed: _handleVerify,
-          content: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(_codeLength, (index) {
-              return SizedBox(
-                width: 45,
-                height: 56,
-                child: TextField(
-                  controller: _controllers[index],
-                  focusNode: _focusNodes[index],
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  maxLength: 1,
-                  style: const TextStyle(
+          content: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(_codeLength, (index) {
+                  return OtpCodeBox(
+                    controller: _controllers[index],
+                    focusNode: _focusNodes[index],
+                    width: 45,
+                    height: 56,
                     fontSize: 22,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    filled: true,
-                    fillColor: AppTheme.darkSurface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(12)),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  onChanged: (value) => _onChanged(index, value),
+                    onChanged: (value) => _onChanged(index, value),
+                  );
+                }),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Ingresa 000000 para continuar',
+                style: TextStyle(
+                  color: AppTheme.primaryBlue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
-              );
-            }),
+              ),
+            ],
           ),
         );
       },
