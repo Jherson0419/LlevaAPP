@@ -1,3 +1,5 @@
+import 'env_defaults.dart';
+
 class AppConstants {
   // Coordenadas de Trujillo, Perú
   static const double trujilloLatitude = -8.1116;
@@ -38,11 +40,11 @@ class AppConstants {
   // Supabase (antes hardcodeados en main.dart). Ver docs/setup_env.md.
   static const String supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: '',
+    defaultValue: EnvDefaults.supabaseUrl,
   );
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: EnvDefaults.supabaseAnonKey,
   );
 
   // Google Sign-In — Web Client ID (OAuth 2.0), desde Google Cloud Console →
@@ -54,7 +56,7 @@ class AppConstants {
   // ver AuthBloc._onGoogleSignIn.
   static const String googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '',
+    defaultValue: EnvDefaults.googleWebClientId,
   );
 
   // Clave de la API de Gemini para generar avatares (ver

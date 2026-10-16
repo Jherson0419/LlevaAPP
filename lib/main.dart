@@ -36,8 +36,10 @@ Future<void> main() async {
 
   // Firebase (push). Sin google-services.json / GoogleService-Info.plist
   // falla: la app sigue sin notificaciones push en vez de no arrancar.
+  // Con timeout: si se cuelga (config nativa rota), se sigue sin push igual
+  // que cuando falla.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp().timeout(const Duration(seconds: 10));
   } catch (e) {
     debugPrint('Firebase no configurado: $e');
   }
@@ -57,16 +59,13 @@ Future<void> main() async {
     );
   }
 
-  // Antes la URL y la anon key de Supabase estaban hardcodeadas aquí (y por
-  // lo tanto en el historial de git). Fallar rápido y explícito si faltan es
-  // mejor que intentar inicializar Supabase con una URL vacía — ver
-  // docs/setup_env.md para correr la app con --dart-define-from-file=.env.
-  if (AppConstants.supabaseUrl.isEmpty || AppConstants.supabaseAnonKey.isEmpty) {
-    throw StateError(
-      'Faltan SUPABASE_URL/SUPABASE_ANON_KEY. Corre la app con '
-      '--dart-define-from-file=.env (ver docs/setup_env.md).',
-    );
-  }
+  // Qué llegó por --dart-define en este modo (enmascarado).
+  debugPrint('ENV SUPABASE_URL: ${_mask(AppConstants.supabaseUrl)}');
+  debugPrint('ENV SUPABASE_ANON_KEY: ${_mask(AppConstants.supabaseAnonKey)}');
+  debugPrint('ENV GOOGLE_MAPS_KEY: ${_mask(AppConstants.googleMapsApiKey)}');
+  debugPrint(
+    'ENV GOOGLE_WEB_CLIENT_ID: ${_mask(AppConstants.googleWebClientId)}',
+  );
 
   // Android: useAndroidViewSurface true mejora el orden de capas pero en algunos equipos
   // deja la textura del mapa en negro si hay muchas capas encima. false suele mostrar el mapa;
@@ -78,11 +77,19 @@ Future<void> main() async {
     }
   }
 
-  // Inicializar Supabase
-  await Supabase.initialize(
-    url: AppConstants.supabaseUrl,
-    anonKey: AppConstants.supabaseAnonKey,
-  );
+  // Inicializar Supabase. Sin guard de variables vacías: si faltan, falla
+  // aquí (o en el timeout) y se muestra el error en pantalla.
+  try {
+    await Supabase.initialize(
+      url: AppConstants.supabaseUrl,
+      anonKey: AppConstants.supabaseAnonKey,
+    ).timeout(const Duration(seconds: 10));
+  } catch (e) {
+    final message = 'No se pudo inicializar Supabase: $e';
+    debugPrint('ERROR: $message');
+    runApp(_StartupErrorApp(message));
+    return;
+  }
 
   await di.initDI();
 
@@ -102,6 +109,41 @@ Future<void> main() async {
   // llamado dentro de LlevaApp.build() cada vez que cambia el modo.
 
   runApp(const LlevaApp());
+}
+
+/// Para los logs de arranque: muestra el largo y los extremos, nunca el
+/// valor completo.
+String _mask(String value) {
+  if (value.isEmpty) return '(vacío)';
+  if (value.length <= 8) return '*** (${value.length} chars)';
+  return '${value.substring(0, 4)}…${value.substring(value.length - 4)} '
+      '(${value.length} chars)';
+}
+
+/// Pantalla mínima cuando la app no puede arrancar (variables de entorno
+/// faltantes o Supabase sin inicializar), en lugar del splash congelado.
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(),
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(message, textAlign: TextAlign.center),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LlevaApp extends StatefulWidget {

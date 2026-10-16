@@ -1,5 +1,6 @@
 # Secretos locales (ver .env.example / docs/setup_env.md) — NUNCA commitear
 .env
+lib/core/constants/env_defaults.dart
 
 # Miscellaneous
 *.class

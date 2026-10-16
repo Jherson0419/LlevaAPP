@@ -153,6 +153,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
     try {
       emit(const AuthLoading());
+      // El número de prueba (51972496654 / 181921) no necesita rama propia:
+      // está configurado en Supabase → Auth → Phone → Test Phone Numbers, así
+      // que esta misma llamada lo acepta sin SMS y crea una sesión real.
       final response = await _supabase.auth.verifyOTP(
         phone: _toE164(event.phone),
         token: event.code,
