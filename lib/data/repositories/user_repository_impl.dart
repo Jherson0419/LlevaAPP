@@ -28,6 +28,32 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
+  Future<UserEntity?> getUserByEmail(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      // Igual que [existsProfileWithEmail]: tal como se escribió y en
+      // minúsculas, sin `ilike` (`_` y `%` son comodines ahí).
+      final variants = {trimmed, trimmed.toLowerCase()}.toList();
+      final rows = await _supabaseClient
+          .from('profiles')
+          .select()
+          .inFilter('email', variants)
+          .limit(1);
+      if (rows.isEmpty) return null;
+      return UserModel.fromJson(rows.first);
+    } catch (e, st) {
+      developer.log(
+        'getUserByEmail: $e',
+        name: 'UserRepositoryImpl',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    }
+  }
+
+  @override
   Future<UserEntity?> getUserById(String id) async {
     if (id.trim().isEmpty) return null;
     final response = await _supabaseClient

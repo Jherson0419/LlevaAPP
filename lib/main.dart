@@ -1,5 +1,10 @@
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'dart:async' show unawaited;
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/constants/app_constants.dart';
 import 'core/di/injection_container.dart' as di;
 import 'core/keys/app_overlay_keys.dart';
+import 'core/services/notification_service.dart';
 import 'core/routes/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/bloc/auth/auth_bloc.dart';
@@ -17,8 +23,39 @@ import 'presentation/bloc/auth/auth_event.dart';
 import 'presentation/cubit/passenger_driver_mode_cubit.dart';
 import 'presentation/cubit/theme_cubit.dart';
 
+/// Mensajes FCM con la app en segundo plano o cerrada. Las notificaciones
+/// (con `notification`) ya las muestra el sistema; esto solo deja registro.
+/// Corre en un isolate aparte: tiene que ser una función de nivel superior.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  debugPrint('Background message: ${message.notification?.title}');
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase (push). Sin google-services.json / GoogleService-Info.plist
+  // falla: la app sigue sin notificaciones push en vez de no arrancar.
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase no configurado: $e');
+  }
+
+  if (Firebase.apps.isNotEmpty) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
+
+  // Solo en debug: token FCM en consola para probar envíos. Sin await, para
+  // no retrasar el arranque (getToken va por red y en iOS espera a APNs).
+  if (kDebugMode && Firebase.apps.isNotEmpty) {
+    unawaited(
+      FirebaseMessaging.instance.getToken().then(
+            (token) => debugPrint('FCM Token: $token'),
+            onError: (Object e) => debugPrint('FCM Error: $e'),
+          ),
+    );
+  }
 
   // Antes la URL y la anon key de Supabase estaban hardcodeadas aquí (y por
   // lo tanto en el historial de git). Fallar rápido y explícito si faltan es
@@ -48,6 +85,10 @@ Future<void> main() async {
   );
 
   await di.initDI();
+
+  // Sin await: pedir permiso y obtener el token FCM no debe retrasar el
+  // primer frame.
+  unawaited(di.sl<NotificationService>().initialize());
 
   // Se lee la preferencia de tema antes de runApp() para que el primer frame
   // ya salga con el modo guardado (sin parpadeo claro→oscuro); la instancia

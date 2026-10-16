@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/utils/location_helper.dart';
+import '../../../data/repositories/notification_repository.dart';
 import '../../../../domain/entities/ride_entity.dart';
 import '../../../../domain/entities/ride_offer_entity.dart';
 import '../../../../domain/repositories/ride_repository.dart';
@@ -12,6 +13,7 @@ import 'driver_status_state.dart';
 
 class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
   final RideRepository rideRepository;
+  final NotificationRepository notificationRepository;
   StreamSubscription<List<RideEntity>>? _ridesSubscription;
   StreamSubscription<RideEntity>? _rideResolutionSubscription;
   StreamSubscription<List<RideOfferEntity>>? _offersSubscription;
@@ -21,7 +23,10 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
   Timer? _offerTimer;
   String? _selfDriverIdForOffer;
 
-  DriverStatusBloc({required this.rideRepository}) : super(const DriverOffline()) {
+  DriverStatusBloc({
+    required this.rideRepository,
+    required this.notificationRepository,
+  }) : super(const DriverOffline()) {
     on<ToggleStatus>(_onToggleStatus);
     on<NearbyRidesUpdated>(_onNearbyRidesUpdated);
     on<ReceiveRequest>(_onReceiveRequest);
@@ -290,6 +295,9 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
       if (won) {
         emit(DriverOnTrip(ride));
         Future.microtask(() => _startLocationTracking(ride.id));
+        // Recién aquí el conductor es parte del viaje (driver_id = él); al
+        // enviar la oferta todavía no, y notify-ride lo rechazaría.
+        _notify('ride_accepted', ride.id);
       } else {
         emit(DriverOnline(availableRides: _lastKnownRides));
         _restartSubscription();
@@ -403,6 +411,7 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     try {
       await rideRepository.updateRideStatus(trip.activeRide.id, 'arrived');
       emit(DriverArrivedAtPickup(_rideWithStatus(trip.activeRide, 'arrived')));
+      _notify('driver_arrived', trip.activeRide.id);
     } catch (_) {}
   }
 
@@ -415,6 +424,7 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     try {
       await rideRepository.updateRideStatus(trip.activeRide.id, 'ongoing');
       emit(DriverTripInProgress(_rideWithStatus(trip.activeRide, 'ongoing')));
+      _notify('trip_started', trip.activeRide.id);
     } catch (_) {}
   }
 
@@ -427,11 +437,20 @@ class DriverStatusBloc extends Bloc<DriverStatusEvent, DriverStatusState> {
     try {
       _stopLocationTracking();
       await rideRepository.updateRideStatus(trip.activeRide.id, 'finished');
+      _notify('trip_completed', trip.activeRide.id);
       _rideResolutionSubscription?.cancel();
       _rideResolutionSubscription = null;
       emit(DriverOnline(availableRides: _lastKnownRides));
       await _restartSubscription();
     } catch (_) {}
+  }
+
+  /// Aviso push al pasajero. Sin await: es best-effort y no debe frenar el
+  /// viaje.
+  void _notify(String type, String rideId) {
+    unawaited(
+      notificationRepository.notifyRideEvent(type: type, rideId: rideId),
+    );
   }
 
   Future<void> _startLocationTracking(String rideId) async {

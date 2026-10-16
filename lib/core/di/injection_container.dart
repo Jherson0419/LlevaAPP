@@ -2,6 +2,7 @@ import 'package:get_it/get_it.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/repositories/driver_repository_impl.dart';
+import '../../data/repositories/notification_repository.dart';
 import '../../data/repositories/ride_repository_impl.dart';
 import '../../data/repositories/user_repository_impl.dart';
 import '../../domain/repositories/driver_repository.dart';
@@ -17,6 +18,7 @@ import '../../presentation/bloc/driver_wallet/driver_wallet_cubit.dart';
 import '../../presentation/bloc/ride_history/ride_history_cubit.dart';
 import '../../presentation/bloc/driver_profile/driver_profile_cubit.dart';
 import '../../presentation/bloc/top_drivers/top_drivers_cubit.dart';
+import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../services/avatar_generator_service.dart';
 import '../services/storage_service.dart';
@@ -31,6 +33,7 @@ Future<void> initDI() async {
   // Servicios
   sl.registerLazySingleton<PlacesService>(PlacesService.new);
   sl.registerLazySingleton<StorageService>(() => StorageService(sl()));
+  sl.registerLazySingleton<NotificationService>(() => NotificationService());
   sl.registerLazySingleton<AvatarGeneratorService>(
     () => AvatarGeneratorService(),
   );
@@ -39,6 +42,9 @@ Future<void> initDI() async {
   sl.registerLazySingleton<UserRepository>(() => UserRepositoryImpl());
   sl.registerLazySingleton<RideRepository>(() => RideRepositoryImpl());
   sl.registerLazySingleton<DriverRepository>(() => DriverRepositoryImpl());
+  sl.registerLazySingleton<NotificationRepository>(
+    () => NotificationRepository(sl<SupabaseClient>()),
+  );
 
   sl.registerLazySingleton<PassengerDriverModeCubit>(
     PassengerDriverModeCubit.new,
@@ -51,10 +57,14 @@ Future<void> initDI() async {
       userRepository: sl(),
       storageService: sl(),
       supabaseClient: sl(),
+      notificationService: sl(),
     ),
   );
   sl.registerFactory<DriverStatusBloc>(
-    () => DriverStatusBloc(rideRepository: sl()),
+    () => DriverStatusBloc(
+      rideRepository: sl(),
+      notificationRepository: sl(),
+    ),
   );
   sl.registerFactory<DriverStatsCubit>(
     () => DriverStatsCubit(
@@ -69,6 +79,7 @@ Future<void> initDI() async {
     () => ClientRideBloc(
       placesService: sl(),
       rideRepository: sl(),
+      notificationRepository: sl(),
     ),
   );
   sl.registerFactory<RideHistoryCubit>(

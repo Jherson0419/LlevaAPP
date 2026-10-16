@@ -7,6 +7,10 @@ abstract class UserRepository {
   /// Devuelve null si no existe.
   Future<UserEntity?> getUserByPhone(String phone);
 
+  /// Obtiene un perfil por correo (tal como está y en minúsculas).
+  /// Devuelve null si no existe o si la consulta falla.
+  Future<UserEntity?> getUserByEmail(String email);
+
   /// Obtiene un perfil por `id` (= `auth.uid()` de Supabase Auth tras el login
   /// real por OTP — ver BLOQUE 1.3 de la auditoría). Devuelve null si no existe.
   Future<UserEntity?> getUserById(String id);

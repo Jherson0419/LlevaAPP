@@ -39,6 +39,13 @@
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version"/>
 
+        <!-- Canal de las notificaciones push que llegan con la app cerrada.
+             Lo crea NotificationService. El servicio de mensajería ya lo
+             declara el plugin firebase_messaging en su propio manifest. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="lleva_default_channel"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

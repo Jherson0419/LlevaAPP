@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -10,6 +11,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/utils/age_validation.dart';
 import '../../../core/utils/pending_driver_documents.dart';
@@ -30,20 +32,23 @@ import 'auth_state.dart';
 /// Desactívalo antes de publicar. Sin sesión real de Supabase Auth, cualquier
 /// operación que dependa de `auth.uid()` (RLS) fallará para un usuario
 /// "logueado" por este atajo — solo sirve para navegar la UI en pruebas.
-const bool kDevMode = bool.fromEnvironment('DEV_MODE', defaultValue: true);
+const bool kDevMode = bool.fromEnvironment('DEV_MODE', defaultValue: false);
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final UserRepository _userRepository;
   final StorageService _storageService;
   final SupabaseClient _supabase;
+  final NotificationService _notificationService;
 
   AuthBloc({
     required UserRepository userRepository,
     required StorageService storageService,
     required SupabaseClient supabaseClient,
+    required NotificationService notificationService,
   })  : _userRepository = userRepository,
         _storageService = storageService,
         _supabase = supabaseClient,
+        _notificationService = notificationService,
         super(const AuthInitial()) {
     on<SendOtpRequested>(_onSendOtpRequested);
     on<OtpVerified>(_onOtpVerified);
@@ -54,6 +59,23 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<RefreshProfileEvent>(_onRefreshProfile);
     on<LogoutRequested>(_onLogoutRequested);
     on<SubmitDriverApplicationEvent>(_onSubmitDriverApplication);
+  }
+
+  /// Al entrar (Google, SMS, registro o sesión recuperada al abrir la app)
+  /// guarda el token FCM de este equipo para recibir avisos de viaje. Usa el
+  /// id de la sesión: RLS solo deja actualizar la fila propia.
+  @override
+  void onChange(Change<AuthState> change) {
+    super.onChange(change);
+    final next = change.nextState;
+    if (next is! AuthAuthenticated) return;
+    final current = change.currentState;
+    if (current is AuthAuthenticated && current.user.id == next.user.id) {
+      return;
+    }
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null || uid != next.user.id) return;
+    unawaited(_notificationService.saveTokenForUser(uid));
   }
 
   /// Supabase Phone Auth exige E.164; la UI solo captura el número local
@@ -223,6 +245,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     GoogleSignInRequested event,
     Emitter<AuthState> emit,
   ) async {
+    // Fuera del try para el respaldo por correo del catch.
+    GoogleSignInAccount? googleUser;
     try {
       emit(const AuthLoading());
 
@@ -234,7 +258,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         scopes: const ['email'],
       );
 
-      final googleUser = await googleSignIn.signIn();
+      // Olvida la última cuenta elegida para que el selector salga siempre
+      // (si no, Android entra solo con la cuenta anterior). Si falla, igual
+      // se intenta el login.
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+
+      googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
         // Usuario cerró el selector de cuentas sin elegir ninguna.
         emit(const AuthInitial());
@@ -269,6 +300,27 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
 
+      // Respaldo: perfil creado antes con este correo pero con otro id (alta
+      // por teléfono o anterior a Google). Google ya verificó el correo, así
+      // que el perfil se pasa al id de esta sesión para que RLS
+      // (id = auth.uid()) lo reconozca y la próxima vez baste getUserById.
+      final googleEmail = response.user?.email ?? googleUser.email;
+      if (googleEmail.isNotEmpty) {
+        final byEmail = await _userRepository.getUserByEmail(googleEmail);
+        if (byEmail != null) {
+          final migrated = byEmail.id == authUid
+              ? byEmail
+              : await _userRepository.migrateProfileId(
+                  currentId: byEmail.id,
+                  newId: authUid,
+                );
+          // Si la migración falla (p. ej. FK de rides sin ON UPDATE
+          // CASCADE), igual entra con el perfil antiguo.
+          emit(AuthAuthenticated(migrated ?? byEmail));
+          return;
+        }
+      }
+
       // Perfil nuevo: un usuario de Google no tiene teléfono todavía, así que
       // llega con `phone` vacío a RegisterProfileScreen (campo editable ahí);
       // el correo de Google sí se propaga vía prefilledEmail.
@@ -285,6 +337,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         error: e,
         stackTrace: st,
       );
+      // Respaldo por correo solo si ya hay sesión de Supabase: si falló el
+      // propio signInWithIdToken, entrar sin sesión no persistiría y las
+      // escrituras con RLS fallarían.
+      final email = googleUser?.email ?? '';
+      if (email.isNotEmpty && _supabase.auth.currentSession != null) {
+        final byEmail = await _userRepository.getUserByEmail(email);
+        if (byEmail != null) {
+          emit(AuthAuthenticated(byEmail));
+          return;
+        }
+      }
       emit(AuthError('No se pudo iniciar sesión con Google: $e'));
     }
   }

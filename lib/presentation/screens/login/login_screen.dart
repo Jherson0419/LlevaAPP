@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -117,29 +119,41 @@ class _LoginScreenState extends State<LoginScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.white,
-        // El teclado no redimensiona el body (el video quedaría saltando);
-        // la tarjeta suma el inset del teclado a su padding inferior.
+        // El teclado no encoge el body: la tarjeta sube sola sobre él (ver
+        // `bottom` abajo) y el fondo queda fijo detrás.
         resizeToAvoidBottomInset: false,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final videoHeight = constraints.maxHeight * 0.3;
+        body: Builder(
+          builder: (context) {
+            final screenHeight = MediaQuery.sizeOf(context).height;
+            final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+            final topSafe = MediaQuery.paddingOf(context).top;
+            // 70% de la pantalla; con el teclado abierto se recorta para no
+            // salirse por arriba (deja visible una franja del degradado). El
+            // contenido sobrante se desplaza dentro de la tarjeta.
+            final cardHeight = math.min(
+              screenHeight * 0.7,
+              screenHeight - keyboard - topSafe - 24,
+            );
             return Stack(
               children: [
-                // 30% superior: video. Se prolonga un poco por debajo de la
-                // tarjeta para que se vea detrás de sus esquinas redondeadas.
+                // Capa 1: video (o degradado mientras carga) fijo en el 30%
+                // superior. Se prolonga un poco por debajo de la tarjeta para
+                // que se vea detrás de sus esquinas redondeadas.
                 Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: videoHeight + _cardCornerRadius,
+                  height: screenHeight * 0.3 + _cardCornerRadius,
                   child: const _VideoBackground(),
                 ),
-                // 70% inferior: tarjeta de inicio de sesión
+                // Capa 2: tarjeta pegada encima del teclado. viewInsets ya
+                // cambia cuadro a cuadro con la animación del teclado, así
+                // que la tarjeta lo acompaña sin animación propia.
                 Positioned(
-                  top: videoHeight,
                   left: 0,
                   right: 0,
-                  bottom: 0,
+                  bottom: keyboard,
+                  height: cardHeight,
                   child: AnimatedBuilder(
                     animation: _entryController,
                     builder: (context, child) {
@@ -182,13 +196,13 @@ class _LoginScreenState extends State<LoginScreen>
       child: SingleChildScrollView(
         physics: const ClampingScrollPhysics(),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        // Sin el inset del teclado: la tarjeta ya está posicionada encima de
+        // él (sumarlo dejaría un hueco en blanco).
         padding: EdgeInsets.fromLTRB(
           28,
           28,
           28,
-          MediaQuery.viewInsetsOf(context).bottom +
-              MediaQuery.paddingOf(context).bottom +
-              24,
+          MediaQuery.paddingOf(context).bottom + 24,
         ),
         child: _buildContent(context),
       ),
@@ -482,9 +496,9 @@ class _SocialButton extends StatelessWidget {
   }
 }
 
-/// Cabecera del login: video de Trujillo en bucle, sin sonido y recortado
-/// para llenar el espacio. Mientras carga (o si el video no se puede
-/// reproducir) muestra un fondo azul con el ícono del auto.
+/// Fondo del login: video de Trujillo en bucle, sin sonido y recortado para
+/// llenar el espacio. Mientras carga (o si no se puede reproducir) muestra el
+/// degradado azul de la marca.
 class _VideoBackground extends StatefulWidget {
   const _VideoBackground();
 
@@ -506,8 +520,8 @@ class _VideoBackgroundState extends State<_VideoBackground> {
       _controller.setLooping(true);
       _controller.setVolume(0.0);
       _controller.play();
-    }).catchError((_) {
-      // Video ausente o no reproducible: queda el fondo de respaldo.
+    }).catchError((Object _) {
+      // Video ausente o no reproducible: queda el degradado.
     });
   }
 
@@ -520,15 +534,15 @@ class _VideoBackgroundState extends State<_VideoBackground> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
-      return ColoredBox(
-        color: AppTheme.primaryBlue,
-        child: Center(
-          child: Icon(
-            Icons.directions_car_rounded,
-            color: Colors.white.withValues(alpha: 0.3),
-            size: 64,
+      return const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0033AA), Color(0xFF0066CC), Color(0xFF0099FF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
+        child: SizedBox.expand(),
       );
     }
     return ClipRect(

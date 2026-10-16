@@ -66,5 +66,14 @@
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>620550412913-b8cuvqb84tou4vmc3cdhqu6g2gnbb3le.apps.googleusercontent.com</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

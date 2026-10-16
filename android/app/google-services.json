@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "127200980900",
+    "project_id": "lleva-ed780",
+    "storage_bucket": "lleva-ed780.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:127200980900:android:cb2410310021ffc22c9b31",
+        "android_client_info": {
+          "package_name": "pe.lleva.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXRyBhT7_2OvFJYP8vceXkyka0tPZPNd8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -17,6 +17,7 @@ import '../../../core/utils/location_helper.dart';
 import '../../../data/models/ride_model.dart';
 import '../../../domain/entities/ride_entity.dart';
 import '../../../domain/entities/ride_offer_entity.dart';
+import '../../../data/repositories/notification_repository.dart';
 import '../../../domain/repositories/ride_repository.dart';
 
 part 'client_ride_event.dart';
@@ -25,6 +26,7 @@ part 'client_ride_state.dart';
 class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
   final PlacesService _placesService;
   final RideRepository _rideRepository;
+  final NotificationRepository _notificationRepo;
   static const Duration _requestRecoveryWindow = Duration(minutes: 15);
 
   /// Coordenadas de respaldo (centro de Trujillo) para un destino cuyo
@@ -43,8 +45,10 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
   ClientRideBloc({
     required PlacesService placesService,
     required RideRepository rideRepository,
+    required NotificationRepository notificationRepository,
   })  : _placesService = placesService,
         _rideRepository = rideRepository,
+        _notificationRepo = notificationRepository,
         super(const ClientRideState()) {
     on<DestTextChanged>(
       _onDestTextChanged,
@@ -910,6 +914,13 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
         driverId: event.driverId,
         finalPrice: event.finalPrice,
       );
+      // Sin await: el aviso es best-effort y no debe frenar el viaje.
+      unawaited(
+        _notificationRepo.notifyRideEvent(
+          type: 'offer_accepted',
+          rideId: ride.id,
+        ),
+      );
     } catch (_) {
       _emitTransientError(emit, 'No se pudo aceptar la oferta del conductor');
     }
@@ -969,6 +980,13 @@ class ClientRideBloc extends Bloc<ClientRideEvent, ClientRideState> {
 
     try {
       await _rideRepository.cancelRide(rideId);
+      // Solo llega si ya había conductor asignado (la función lo omite si no).
+      unawaited(
+        _notificationRepo.notifyRideEvent(
+          type: 'ride_cancelled',
+          rideId: rideId,
+        ),
+      );
       developer.log(
         'CancelRide: éxito — estado UI → initial, viaje cancelado en BD',
         name: 'ClientRideBloc',
