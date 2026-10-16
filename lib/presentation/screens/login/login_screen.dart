@@ -100,6 +100,8 @@ class _LoginScreenState extends State<LoginScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
+              // 10 s para poder leer el error completo de Supabase.
+              duration: const Duration(seconds: 10),
               backgroundColor: AppTheme.errorRed,
             ),
           );

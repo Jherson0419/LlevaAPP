@@ -367,6 +367,16 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           return;
         }
       }
+      // Error de Supabase completo (status, código y mensaje) para poder
+      // leerlo en pantalla al probar en el teléfono.
+      if (e is AuthException) {
+        emit(
+          AuthError(
+            'Google Error [${e.statusCode}] ${e.code ?? ''}: ${e.message}',
+          ),
+        );
+        return;
+      }
       emit(AuthError('No se pudo iniciar sesión con Google: $e'));
     }
   }
