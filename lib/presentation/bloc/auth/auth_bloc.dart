@@ -1,7 +1,9 @@
 import 'dart:async' show unawaited;
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 // `supabase_flutter` también exporta un `AuthState` (gotrue, eventos de
@@ -274,6 +276,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
+      if (kDebugMode) {
+        print('Google idToken null: ${idToken == null}');
+        print('serverClientId: ${AppConstants.googleWebClientId}');
+        if (idToken != null) {
+          // Decode JWT payload (base64) to check audience
+          final parts = idToken.split('.');
+          if (parts.length == 3) {
+            final payload = parts[1];
+            final normalized = base64Url.normalize(payload);
+            final decoded = utf8.decode(base64Url.decode(normalized));
+            print('JWT payload: $decoded');
+          }
+        }
+      }
       if (idToken == null || idToken.isEmpty) {
         emit(const AuthError(
           'No se pudo obtener el token de Google. Intenta de nuevo.',
