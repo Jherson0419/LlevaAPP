@@ -62,12 +62,12 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.620550412913-b8cuvqb84tou4vmc3cdhqu6g2gnbb3le</string>
+				<string>com.googleusercontent.apps.620550412913-na70c03td2s7r16lnkf5sdfletf384pj</string>
 			</array>
 		</dict>
 	</array>
 	<key>GIDClientID</key>
-	<string>620550412913-b8cuvqb84tou4vmc3cdhqu6g2gnbb3le.apps.googleusercontent.com</string>
+	<string>620550412913-na70c03td2s7r16lnkf5sdfletf384pj.apps.googleusercontent.com</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 	<key>UIBackgroundModes</key>
