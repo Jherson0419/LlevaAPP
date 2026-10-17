@@ -67,30 +67,31 @@ workflows:
 
       - name: Set up env_defaults.dart
         script: |
-          #!/usr/bin/env bash
-          set -e
-
-          # Verificar que las variables existen
-          if [ -z "$GOOGLE_WEB_CLIENT_ID" ]; then
-            echo "ERROR: GOOGLE_WEB_CLIENT_ID está vacío" >&2
-            exit 1
-          fi
-
-          echo "GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:0:20}..." # muestra primeros 20 chars
-
           python3 - << 'PYEOF'
           import os
+          supabase_url = os.environ["SUPABASE_URL"]
+          supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
+          google_web_client_id = os.environ["GOOGLE_WEB_CLIENT_ID"]
+
+          print(f"SUPABASE_URL: {supabase_url[:20]}...")
+          print(f"SUPABASE_ANON_KEY: {supabase_anon_key[:20]}...")
+          print(f"GOOGLE_WEB_CLIENT_ID: {google_web_client_id[:20]}...")
+
           content = f"""// Generado por Codemagic — no commitear
           class EnvDefaults {{
-            static const supabaseUrl = '{os.environ["SUPABASE_URL"]}';
-            static const supabaseAnonKey = '{os.environ["SUPABASE_ANON_KEY"]}';
-            static const googleWebClientId = '{os.environ["GOOGLE_WEB_CLIENT_ID"]}';
+            static const supabaseUrl = '{supabase_url}';
+            static const supabaseAnonKey = '{supabase_anon_key}';
+            static const googleWebClientId = '{google_web_client_id}';
           }}
           """
-          with open(os.environ["CM_BUILD_DIR"] + "/lib/core/constants/env_defaults.dart", "w") as f:
+
+          path = os.environ["CM_BUILD_DIR"] + "/lib/core/constants/env_defaults.dart"
+          with open(path, "w") as f:
               f.write(content)
+
           print("env_defaults.dart generado:")
-          print(content)
+          with open(path) as f:
+              print(f.read())
           PYEOF
 
       - name: Flutter build IPA
