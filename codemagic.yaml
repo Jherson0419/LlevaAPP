@@ -14,15 +14,26 @@ workflows:
     scripts:
       - name: Set up .env file
         script: |
-          cat > .env << EOF
-          SUPABASE_URL=$SUPABASE_URL
-          SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-          GOOGLE_MAPS_KEY=$GOOGLE_MAPS_KEY
-          GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID
-          SUPABASE_REDIRECT_URL=$SUPABASE_REDIRECT_URL
-          REVERSED_CLIENT_ID=$REVERSED_CLIENT_ID
-          DEV_MODE=false
-          EOF
+          python3 << 'PYEOF'
+          import os
+          lines = [
+            f"SUPABASE_URL={os.environ['SUPABASE_URL']}",
+            f"SUPABASE_ANON_KEY={os.environ['SUPABASE_ANON_KEY']}",
+            f"GOOGLE_MAPS_KEY={os.environ['GOOGLE_MAPS_KEY']}",
+            f"GOOGLE_WEB_CLIENT_ID={os.environ['GOOGLE_WEB_CLIENT_ID']}",
+            f"SUPABASE_REDIRECT_URL={os.environ['SUPABASE_REDIRECT_URL']}",
+            f"REVERSED_CLIENT_ID={os.environ['REVERSED_CLIENT_ID']}",
+            "DEV_MODE=false",
+          ]
+          with open(".env", "w") as f:
+              f.write("\n".join(lines) + "\n")
+          print(".env generado correctamente")
+          with open(".env") as f:
+              for line in f:
+                  key = line.split("=")[0]
+                  val = line.split("=",1)[1].strip() if "=" in line else ""
+                  print(f"{key}={val[:15]}...")
+          PYEOF
 
       - name: Get Flutter packages
         script: flutter pub get
