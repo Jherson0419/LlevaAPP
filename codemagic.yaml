@@ -67,8 +67,8 @@ workflows:
 
       - name: Set up env_defaults.dart
         script: |
-          python3 - << 'PYEOF'
-          import os
+          python3 << 'PYEOF'
+          import os, textwrap
           supabase_url = os.environ["SUPABASE_URL"]
           supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
           google_web_client_id = os.environ["GOOGLE_WEB_CLIENT_ID"]
@@ -77,21 +77,22 @@ workflows:
           print(f"SUPABASE_ANON_KEY: {supabase_anon_key[:20]}...")
           print(f"GOOGLE_WEB_CLIENT_ID: {google_web_client_id[:20]}...")
 
-          content = f"""// Generado por Codemagic — no commitear
-          class EnvDefaults {{
-            static const supabaseUrl = '{supabase_url}';
-            static const supabaseAnonKey = '{supabase_anon_key}';
-            static const googleWebClientId = '{google_web_client_id}';
-          }}
-          """
+          lines = [
+            "// Generado por Codemagic — no commitear",
+            "class EnvDefaults {",
+            f"  static const supabaseUrl = '{supabase_url}';",
+            f"  static const supabaseAnonKey = '{supabase_anon_key}';",
+            f"  static const googleWebClientId = '{google_web_client_id}';",
+            "}",
+          ]
+          content = "\n".join(lines) + "\n"
 
           path = os.environ["CM_BUILD_DIR"] + "/lib/core/constants/env_defaults.dart"
           with open(path, "w") as f:
               f.write(content)
 
           print("env_defaults.dart generado:")
-          with open(path) as f:
-              print(f.read())
+          print(content)
           PYEOF
 
       - name: Flutter build IPA
