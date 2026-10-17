@@ -1,7 +1,7 @@
 name: lleva
 description: Aplicación de taxi para Trujillo, Perú - Comisiones justas para conductores
 publish_to: 'none'
-version: 1.0.0+10
+version: 1.0.0+11
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
