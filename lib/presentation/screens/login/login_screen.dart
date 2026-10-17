@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:video_player/video_player.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_event.dart';
@@ -16,11 +16,10 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
-    with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen> {
   static const Color _blue = AppTheme.primaryBlue;
-  static const Color _textDark = Color(0xFF1A1A1A);
-  static const double _cardCornerRadius = 28;
+  static const Color _textPrimary = AppTheme.lightTextPrimary;
+  static const Color _textSecondary = AppTheme.lightTextSecondary;
 
   final GlobalKey<FormState> _emailFormKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
@@ -31,31 +30,18 @@ class _LoginScreenState extends State<LoginScreen>
   /// del botón; Google también pasa por AuthLoading).
   bool _emailSubmitting = false;
 
-  late final AnimationController _entryController;
-  late final Animation<double> _cardSlide;
-  late final Animation<double> _cardFade;
+  late final TapGestureRecognizer _createAccountTap;
 
   @override
   void initState() {
     super.initState();
-    _entryController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    _cardSlide = CurvedAnimation(
-      parent: _entryController,
-      curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
-    );
-    _cardFade = CurvedAnimation(
-      parent: _entryController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-    );
-    _entryController.forward();
+    _createAccountTap = TapGestureRecognizer()
+      ..onTap = () => context.push('/register-email');
   }
 
   @override
   void dispose() {
-    _entryController.dispose();
+    _createAccountTap.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -73,28 +59,38 @@ class _LoginScreenState extends State<LoginScreen>
         );
   }
 
-  InputDecoration _emailFieldDecoration({
-    required String hint,
-    required IconData icon,
-    Widget? suffix,
-  }) {
-    OutlineInputBorder border(Color color) => OutlineInputBorder(
+  InputDecoration _fieldDecoration({required String hint, Widget? suffix}) {
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: color, width: 1.5),
+          borderSide: BorderSide(color: color, width: width),
         );
     return InputDecoration(
       filled: true,
-      fillColor: const Color(0xFFF0F6FF),
+      fillColor: AppTheme.lightSurface,
       hintText: hint,
       hintStyle: const TextStyle(color: Color(0xFFBBBBBB)),
-      prefixIcon: Icon(icon, color: _blue, size: 20),
       suffixIcon: suffix,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-      border: border(_blue),
-      enabledBorder: border(_blue),
-      focusedBorder: border(_blue),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: border(AppTheme.lightBorder),
+      enabledBorder: border(AppTheme.lightBorder),
+      focusedBorder: border(_blue, 1.5),
       errorBorder: border(AppTheme.errorRed),
-      focusedErrorBorder: border(AppTheme.errorRed),
+      focusedErrorBorder: border(AppTheme.errorRed, 1.5),
+    );
+  }
+
+  Widget _fieldLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: _textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -134,224 +130,227 @@ class _LoginScreenState extends State<LoginScreen>
         }
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
-        // El teclado no encoge el body: la tarjeta sube sola sobre él (ver
-        // `bottom` abajo) y el fondo queda fijo detrás.
-        resizeToAvoidBottomInset: false,
-        body: Builder(
-          builder: (context) {
-            final screenHeight = MediaQuery.sizeOf(context).height;
-            final keyboard = MediaQuery.viewInsetsOf(context).bottom;
-            final topSafe = MediaQuery.paddingOf(context).top;
-            // 70% de la pantalla; con el teclado abierto se recorta para no
-            // salirse por arriba (deja visible una franja del degradado). El
-            // contenido sobrante se desplaza dentro de la tarjeta.
-            final cardHeight = math.min(
-              screenHeight * 0.7,
-              screenHeight - keyboard - topSafe - 24,
-            );
-            return Stack(
-              children: [
-                // Capa 1: video (o degradado mientras carga) fijo en el 30%
-                // superior. Se prolonga un poco por debajo de la tarjeta para
-                // que se vea detrás de sus esquinas redondeadas.
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: screenHeight * 0.3 + _cardCornerRadius,
-                  child: const _VideoBackground(),
-                ),
-                // Capa 2: tarjeta pegada encima del teclado. viewInsets ya
-                // cambia cuadro a cuadro con la animación del teclado, así
-                // que la tarjeta lo acompaña sin animación propia.
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: keyboard,
-                  height: cardHeight,
-                  child: AnimatedBuilder(
-                    animation: _entryController,
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity: _cardFade.value,
-                        child: Transform.translate(
-                          offset: Offset(0, 400 * (1 - _cardSlide.value)),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: _buildLoginCard(context),
+        backgroundColor: AppTheme.lightBackground,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // minHeight = alto visible: el "¿No tienes cuenta?" queda al
+              // fondo y, con el teclado abierto, todo se desplaza.
+              return SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 48),
+                        _buildHeader(),
+                        const SizedBox(height: 36),
+                        _buildForm(),
+                        const SizedBox(height: 24),
+                        _buildContinueButton(),
+                        const SizedBox(height: 24),
+                        _buildDivider(),
+                        const SizedBox(height: 24),
+                        _buildSocialButtons(),
+                        const Spacer(),
+                        const SizedBox(height: 24),
+                        _buildCreateAccount(),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildLoginCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(_cardCornerRadius),
+  Widget _buildHeader() {
+    return const Column(
+      children: [
+        Icon(Icons.location_on, color: _blue, size: 56),
+        SizedBox(height: 16),
+        Text(
+          'Bienvenido a Lleva',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: _textPrimary,
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, -4),
+        SizedBox(height: 8),
+        Text(
+          'Inicia sesión para reservar viajes',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _textSecondary, fontSize: 15),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildForm() {
+    return Form(
+      key: _emailFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _fieldLabel('Correo electrónico'),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autocorrect: false,
+            autofillHints: const [AutofillHints.email],
+            cursorColor: _blue,
+            style: const TextStyle(color: _textPrimary, fontSize: 16),
+            decoration: _fieldDecoration(hint: 'correo@ejemplo.com'),
+            validator: (value) {
+              final email = value?.trim() ?? '';
+              if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+                return 'Ingresa un correo válido';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          _fieldLabel('Contraseña'),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            onFieldSubmitted: (_) => _handleEmailLogin(),
+            cursorColor: _blue,
+            style: const TextStyle(color: _textPrimary, fontSize: 16),
+            decoration: _fieldDecoration(
+              hint: '••••••••',
+              suffix: IconButton(
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: _textSecondary,
+                  size: 20,
+                ),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+              ),
+            ),
+            validator: (value) {
+              if ((value ?? '').isEmpty) return 'Ingresa tu contraseña';
+              return null;
+            },
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        // Sin el inset del teclado: la tarjeta ya está posicionada encima de
-        // él (sumarlo dejaría un hueco en blanco).
-        padding: EdgeInsets.fromLTRB(
-          28,
-          28,
-          28,
-          MediaQuery.paddingOf(context).bottom + 24,
+    );
+  }
+
+  Widget _buildContinueButton() {
+    return SizedBox(
+      height: 54,
+      child: ElevatedButton(
+        onPressed: _emailSubmitting ? null : _handleEmailLogin,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _blue,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: _blue.withValues(alpha: 0.6),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-        child: _buildContent(context),
+        child: _emailSubmitting
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
+            : const Text(
+                'Continuar',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _buildDivider() {
+    return const Row(
       children: [
-        // Login con correo y contraseña
-        Form(
-          key: _emailFormKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-                autocorrect: false,
-                autofillHints: const [AutofillHints.email],
-                cursorColor: _blue,
-                style: const TextStyle(color: _textDark, fontSize: 16),
-                decoration: _emailFieldDecoration(
-                  hint: 'correo@ejemplo.com',
-                  icon: Icons.email_outlined,
-                ),
-                validator: (value) {
-                  final email = value?.trim() ?? '';
-                  if (email.isEmpty ||
-                      !email.contains('@') ||
-                      !email.contains('.')) {
-                    return 'Ingresa un correo válido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                textInputAction: TextInputAction.done,
-                autofillHints: const [AutofillHints.password],
-                onFieldSubmitted: (_) => _handleEmailLogin(),
-                cursorColor: _blue,
-                style: const TextStyle(color: _textDark, fontSize: 16),
-                decoration: _emailFieldDecoration(
-                  hint: 'Contraseña',
-                  icon: Icons.lock_outline,
-                  suffix: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: const Color(0xFF888888),
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                ),
-                validator: (value) {
-                  if ((value ?? '').isEmpty) return 'Ingresa tu contraseña';
-                  return null;
-                },
-              ),
-            ],
+        Expanded(child: Divider(color: AppTheme.lightBorder)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            'o',
+            style: TextStyle(color: _textSecondary, fontSize: 14),
           ),
         ),
+        Expanded(child: Divider(color: AppTheme.lightBorder)),
+      ],
+    );
+  }
 
-        const SizedBox(height: 16),
-
-        // Botón Ingresar con email
-        SizedBox(
-          height: 54,
-          child: ElevatedButton(
-            onPressed: _emailSubmitting ? null : _handleEmailLogin,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _blue,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: _blue.withValues(alpha: 0.6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+  Widget _buildSocialButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: _SocialButton(
+            icon: const SizedBox(
+              width: 20,
+              height: 20,
+              child: CustomPaint(painter: _GoogleLogoPainter()),
             ),
-            child: _emailSubmitting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text(
-                    'Ingresar con email',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+            label: 'Google',
+            onTap: () {
+              context.read<AuthBloc>().add(const GoogleSignInRequested());
+            },
           ),
         ),
-
-        TextButton(
-          onPressed: () => context.push('/register-email'),
-          child: const Text(
-            'Crear cuenta con email',
-            style: TextStyle(color: _blue, fontWeight: FontWeight.w600),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _SocialButton(
+            icon: const Icon(Icons.apple, color: _textPrimary, size: 24),
+            label: 'Apple',
+            // TODO: inicio de sesión con Apple.
+            onTap: () {},
           ),
-        ),
-
-        const SizedBox(height: 8),
-
-        _SocialButton(
-          icon: Icons.g_mobiledata,
-          iconColor: const Color(0xFF4285F4),
-          label: 'Continuar con Google',
-          onTap: () {
-            context.read<AuthBloc>().add(const GoogleSignInRequested());
-          },
-        ),
-        const SizedBox(height: 12),
-        _SocialButton(
-          icon: Icons.apple,
-          iconColor: _textDark,
-          label: 'Continuar con Apple',
-          // TODO: inicio de sesión con Apple.
-          onTap: () {},
         ),
       ],
+    );
+  }
+
+  Widget _buildCreateAccount() {
+    return Center(
+      child: Text.rich(
+        TextSpan(
+          style: const TextStyle(fontSize: 14),
+          children: [
+            const TextSpan(
+              text: '¿No tienes cuenta? ',
+              style: TextStyle(color: _textSecondary),
+            ),
+            TextSpan(
+              text: 'Crear una',
+              style: const TextStyle(
+                color: _blue,
+                fontWeight: FontWeight.w600,
+              ),
+              recognizer: _createAccountTap,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -359,110 +358,91 @@ class _LoginScreenState extends State<LoginScreen>
 class _SocialButton extends StatelessWidget {
   const _SocialButton({
     required this.icon,
-    required this.iconColor,
     required this.label,
     required this.onTap,
   });
 
-  final IconData icon;
-  final Color iconColor;
+  final Widget icon;
   final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 48,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF444444),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+    return SizedBox(
+      height: 52,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTheme.lightTextPrimary,
+          backgroundColor: AppTheme.lightBackground,
+          side: const BorderSide(color: AppTheme.lightBorder, width: 1.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Fondo del login: video de Trujillo en bucle, sin sonido y recortado para
-/// llenar el espacio. Mientras carga (o si no se puede reproducir) muestra el
-/// degradado azul de la marca.
-class _VideoBackground extends StatefulWidget {
-  const _VideoBackground();
+/// "G" de Google en sus cuatro colores, dibujada a mano para no depender de
+/// un asset ni de un paquete de SVG.
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  static const Color _red = Color(0xFFEA4335);
+  static const Color _yellow = Color(0xFFFBBC05);
+  static const Color _green = Color(0xFF34A853);
+  static const Color _blue = Color(0xFF4285F4);
 
   @override
-  State<_VideoBackground> createState() => _VideoBackgroundState();
-}
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.22;
+    final rect = Rect.fromLTWH(
+      stroke / 2,
+      stroke / 2,
+      size.width - stroke,
+      size.height - stroke,
+    );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
 
-class _VideoBackgroundState extends State<_VideoBackground> {
-  late final VideoPlayerController _controller;
-  bool _initialized = false;
+    double rad(double deg) => deg * math.pi / 180;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.asset('assets/film/Trujillo.mp4');
-    _controller.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => _initialized = true);
-      _controller.setLooping(true);
-      _controller.setVolume(0.0);
-      _controller.play();
-    }).catchError((Object _) {
-      // Video ausente o no reproducible: queda el degradado.
-    });
-  }
+    // Ángulos en grados, 0° = derecha, sentido horario.
+    canvas.drawArc(rect, rad(-40), rad(-100), false, paint..color = _red);
+    canvas.drawArc(rect, rad(-140), rad(-90), false, paint..color = _yellow);
+    canvas.drawArc(rect, rad(130), rad(-100), false, paint..color = _green);
+    canvas.drawArc(rect, rad(30), rad(-30), false, paint..color = _blue);
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_initialized) {
-      return const DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0033AA), Color(0xFF0066CC), Color(0xFF0099FF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SizedBox.expand(),
-      );
-    }
-    return ClipRect(
-      child: SizedBox.expand(
-        child: FittedBox(
-          fit: BoxFit.cover,
-          child: SizedBox(
-            width: _controller.value.size.width,
-            height: _controller.value.size.height,
-            child: VideoPlayer(_controller),
-          ),
-        ),
+    // Barra horizontal de la G.
+    final center = size.center(Offset.zero);
+    canvas.drawRect(
+      Rect.fromLTRB(
+        center.dx,
+        center.dy - stroke / 2,
+        size.width,
+        center.dy + stroke / 2,
       ),
+      Paint()..color = _blue,
     );
   }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
