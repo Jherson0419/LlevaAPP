@@ -22,7 +22,6 @@ workflows:
             f"GOOGLE_MAPS_KEY={os.environ['GOOGLE_MAPS_KEY']}",
             f"GOOGLE_WEB_CLIENT_ID={os.environ['GOOGLE_WEB_CLIENT_ID']}",
             f"SUPABASE_REDIRECT_URL={os.environ['SUPABASE_REDIRECT_URL']}",
-            f"REVERSED_CLIENT_ID={os.environ['REVERSED_CLIENT_ID']}",
             "DEV_MODE=false",
           ]
           with open(".env", "w") as f:
