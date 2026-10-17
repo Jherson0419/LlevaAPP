@@ -38,14 +38,8 @@ class AppConstants {
   );
 
   // Supabase (antes hardcodeados en main.dart). Ver docs/setup_env.md.
-  static const String supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: EnvDefaults.supabaseUrl,
-  );
-  static const String supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue: EnvDefaults.supabaseAnonKey,
-  );
+  static const String supabaseUrl = EnvDefaults.supabaseUrl;
+  static const String supabaseAnonKey = EnvDefaults.supabaseAnonKey;
 
   // Google Sign-In — Web Client ID (OAuth 2.0), desde Google Cloud Console →
   // Credentials → "Web client" (el mismo que se registra en Supabase →
@@ -54,10 +48,7 @@ class AppConstants {
   // resto de esta clase, para no fijar en código un valor que cambia por
   // entorno (dev/staging/prod pueden usar proyectos de Google distintos) —
   // ver AuthBloc._onGoogleSignIn.
-  static const String googleWebClientId = String.fromEnvironment(
-    'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: EnvDefaults.googleWebClientId,
-  );
+  static const String googleWebClientId = EnvDefaults.googleWebClientId;
 
   // Clave de la API de Gemini para generar avatares (ver
   // AvatarGeneratorService). Vacía = función deshabilitada. Al ir compilada
