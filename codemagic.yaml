@@ -70,6 +70,14 @@ workflows:
           #!/usr/bin/env bash
           set -e
 
+          # Verificar que las variables existen
+          if [ -z "$GOOGLE_WEB_CLIENT_ID" ]; then
+            echo "ERROR: GOOGLE_WEB_CLIENT_ID está vacío" >&2
+            exit 1
+          fi
+
+          echo "GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:0:20}..." # muestra primeros 20 chars
+
           cat > "$CM_BUILD_DIR/lib/core/constants/env_defaults.dart" << EOF
           // Generado por Codemagic — no commitear
           class EnvDefaults {
@@ -80,6 +88,7 @@ workflows:
           EOF
 
           echo "env_defaults.dart generado correctamente"
+          cat "$CM_BUILD_DIR/lib/core/constants/env_defaults.dart"
 
       - name: Flutter build IPA
         script: |
