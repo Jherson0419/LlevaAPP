@@ -56,6 +56,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<OtpVerified>(_onOtpVerified);
     on<OtpFailed>(_onOtpFailed);
     on<GoogleSignInRequested>(_onGoogleSignIn);
+    on<LoginWithEmailPassword>(_onLoginWithEmailPassword);
+    on<SignUpWithEmailPassword>(_onSignUpWithEmailPassword);
     on<RegisterUser>(_onRegisterUser);
     on<CheckAuthStatus>(_onCheckAuthStatus);
     on<RefreshProfileEvent>(_onRefreshProfile);
@@ -378,6 +380,143 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
       emit(AuthError('No se pudo iniciar sesión con Google: $e'));
+    }
+  }
+
+  String _emailAuthErrorMessage(AuthException e) {
+    final code = e.code ?? '';
+    final msg = e.message.toLowerCase();
+    if (code == 'invalid_credentials' ||
+        msg.contains('invalid login credentials')) {
+      return 'Correo o contraseña incorrectos.';
+    }
+    if (code == 'email_not_confirmed' || msg.contains('not confirmed')) {
+      return 'Confirma tu correo con el enlace que te enviamos antes de '
+          'iniciar sesión.';
+    }
+    if (code == 'user_already_exists' || msg.contains('already registered')) {
+      return 'Ya existe una cuenta con este correo. Inicia sesión.';
+    }
+    if (code == 'weak_password' || msg.contains('password should be')) {
+      return 'La contraseña es muy débil. Usa al menos 6 caracteres.';
+    }
+    if (code == 'email_provider_disabled' || msg.contains('signups not allowed')) {
+      return 'El acceso con correo no está habilitado en el servidor.';
+    }
+    if (code == 'over_request_rate_limit' || msg.contains('rate limit')) {
+      return 'Demasiados intentos. Espera unos minutos antes de reintentar.';
+    }
+    // Error de Supabase completo para poder leerlo al probar en el teléfono.
+    return 'Error [${e.statusCode}] $code: ${e.message}';
+  }
+
+  /// Tras abrir sesión con correo: busca el perfil por id de la sesión y, si
+  /// no existe, por correo (perfil creado con teléfono o Google, se migra al
+  /// id de esta sesión como en [_onGoogleSignIn]). Sin perfil, manda al
+  /// onboarding con el correo ya rellenado.
+  Future<void> _emitProfileForEmailSession(
+    String authUid,
+    String email,
+    Emitter<AuthState> emit,
+  ) async {
+    final existing = await _userRepository.getUserById(authUid);
+    if (existing != null) {
+      emit(AuthAuthenticated(existing));
+      return;
+    }
+    final byEmail = await _userRepository.getUserByEmail(email);
+    if (byEmail != null) {
+      final migrated = byEmail.id == authUid
+          ? byEmail
+          : await _userRepository.migrateProfileId(
+              currentId: byEmail.id,
+              newId: authUid,
+            );
+      emit(AuthAuthenticated(migrated ?? byEmail));
+      return;
+    }
+    emit(AuthNeedsRegistration('', prefilledEmail: email));
+  }
+
+  Future<void> _onLoginWithEmailPassword(
+    LoginWithEmailPassword event,
+    Emitter<AuthState> emit,
+  ) async {
+    final email = event.email.trim();
+    try {
+      emit(const AuthLoading());
+      final response = await _supabase.auth.signInWithPassword(
+        email: email,
+        password: event.password,
+      );
+      final authUid = response.user?.id;
+      if (authUid == null || authUid.isEmpty) {
+        emit(const AuthError('No se pudo iniciar sesión. Intenta de nuevo.'));
+        return;
+      }
+      await _emitProfileForEmailSession(
+        authUid,
+        response.user?.email ?? email,
+        emit,
+      );
+    } on AuthException catch (e, st) {
+      developer.log(
+        'LoginWithEmailPassword AuthException: ${e.message} (code=${e.code})',
+        name: 'AuthBloc',
+        error: e,
+        stackTrace: st,
+      );
+      emit(AuthError(_emailAuthErrorMessage(e)));
+    } catch (e, st) {
+      developer.log(
+        'LoginWithEmailPassword error: $e',
+        name: 'AuthBloc',
+        error: e,
+        stackTrace: st,
+      );
+      emit(AuthError('No se pudo iniciar sesión: $e'));
+    }
+  }
+
+  Future<void> _onSignUpWithEmailPassword(
+    SignUpWithEmailPassword event,
+    Emitter<AuthState> emit,
+  ) async {
+    final email = event.email.trim();
+    try {
+      emit(const AuthLoading());
+      final response = await _supabase.auth.signUp(
+        email: email,
+        password: event.password,
+      );
+      final authUid = response.user?.id;
+      if (authUid == null || authUid.isEmpty) {
+        emit(const AuthError('No se pudo crear la cuenta. Intenta de nuevo.'));
+        return;
+      }
+      // Con "Confirm email" activo en Supabase no hay sesión hasta abrir el
+      // enlace del correo.
+      if (response.session == null) {
+        emit(AuthEmailConfirmationSent(email));
+        return;
+      }
+      await _emitProfileForEmailSession(authUid, email, emit);
+    } on AuthException catch (e, st) {
+      developer.log(
+        'SignUpWithEmailPassword AuthException: ${e.message} (code=${e.code})',
+        name: 'AuthBloc',
+        error: e,
+        stackTrace: st,
+      );
+      emit(AuthError(_emailAuthErrorMessage(e)));
+    } catch (e, st) {
+      developer.log(
+        'SignUpWithEmailPassword error: $e',
+        name: 'AuthBloc',
+        error: e,
+        stackTrace: st,
+      );
+      emit(AuthError('No se pudo crear la cuenta: $e'));
     }
   }
 

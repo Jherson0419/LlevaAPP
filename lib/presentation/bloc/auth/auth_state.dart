@@ -54,6 +54,18 @@ class AuthOtpSent extends AuthState {
   List<Object?> get props => [phone];
 }
 
+/// `signUp` con correo creó la cuenta pero Supabase exige confirmar el correo
+/// antes de abrir sesión (Auth → Providers → Email → "Confirm email"). El
+/// usuario abre el enlace del correo y luego inicia sesión desde el login.
+class AuthEmailConfirmationSent extends AuthState {
+  final String email;
+
+  const AuthEmailConfirmationSent(this.email);
+
+  @override
+  List<Object?> get props => [email];
+}
+
 class AuthNeedsRegistration extends AuthState {
   final String phone;
   final String prefilledEmail;

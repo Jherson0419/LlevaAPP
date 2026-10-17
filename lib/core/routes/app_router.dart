@@ -25,6 +25,7 @@ import '../../presentation/screens/onboarding/onboarding_birthdate_screen.dart';
 import '../../presentation/screens/login/login_screen.dart';
 import '../../presentation/screens/register/driver_register_screen.dart';
 import '../../presentation/screens/register/client_register_screen.dart';
+import '../../presentation/screens/register/email_register_screen.dart';
 import '../../presentation/screens/sms_verification/sms_verification_screen.dart';
 import '../../presentation/screens/auth/register_profile_screen.dart';
 import '../../presentation/screens/auth/driver_approval_screen.dart';
@@ -76,6 +77,7 @@ class AppRouter {
         path == '/driver-register' ||
         path == '/client-register' ||
         path == '/register' ||
+        path == '/register-email' ||
         path.startsWith('/sms-verification') ||
         // Onboarding vigente: bienvenida (Google) → nombre → avatar →
         // correo, donde se crea la cuenta. Género, teléfono, código, DNI y
@@ -362,6 +364,11 @@ class AppRouter {
           path: '/client-register',
           name: 'client-register',
           builder: (context, state) => const ClientRegisterScreen(),
+        ),
+        GoRoute(
+          path: '/register-email',
+          name: 'register-email',
+          builder: (context, state) => const EmailRegisterScreen(),
         ),
         GoRoute(
           path: '/sms-verification',

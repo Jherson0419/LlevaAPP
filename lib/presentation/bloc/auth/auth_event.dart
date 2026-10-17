@@ -153,6 +153,31 @@ class GoogleSignInRequested extends AuthEvent {
   const GoogleSignInRequested();
 }
 
+/// Inicia sesión con correo y contraseña (Supabase Auth,
+/// `signInWithPassword`) — ver AuthBloc._onLoginWithEmailPassword.
+class LoginWithEmailPassword extends AuthEvent {
+  final String email;
+  final String password;
+
+  const LoginWithEmailPassword({required this.email, required this.password});
+
+  @override
+  List<Object?> get props => [email, password];
+}
+
+/// Crea una cuenta de Supabase Auth con correo y contraseña (`signUp`). El
+/// perfil en `profiles` se completa después en el onboarding (nombre → avatar
+/// → correo), igual que con Google — ver AuthBloc._onSignUpWithEmailPassword.
+class SignUpWithEmailPassword extends AuthEvent {
+  final String email;
+  final String password;
+
+  const SignUpWithEmailPassword({required this.email, required this.password});
+
+  @override
+  List<Object?> get props => [email, password];
+}
+
 class CheckAuthStatus extends AuthEvent {
   const CheckAuthStatus();
 }

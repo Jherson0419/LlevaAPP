@@ -28,6 +28,15 @@ class _LoginScreenState extends State<LoginScreen>
   final FocusNode _phoneFocusNode = FocusNode();
   bool _isPhoneFocused = false;
 
+  final GlobalKey<FormState> _emailFormKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+
+  /// true mientras el AuthBloc procesa el login con correo (para el spinner
+  /// del botón; Google también pasa por AuthLoading).
+  bool _emailSubmitting = false;
+
   late final AnimationController _entryController;
   late final Animation<double> _cardSlide;
   late final Animation<double> _cardFade;
@@ -66,7 +75,46 @@ class _LoginScreenState extends State<LoginScreen>
     _createAccountTap.dispose();
     _phoneController.dispose();
     _phoneFocusNode.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  void _handleEmailLogin() {
+    if (!(_emailFormKey.currentState?.validate() ?? false)) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _emailSubmitting = true);
+    context.read<AuthBloc>().add(
+          LoginWithEmailPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+          ),
+        );
+  }
+
+  InputDecoration _emailFieldDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    OutlineInputBorder border(Color color) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: color, width: 1.5),
+        );
+    return InputDecoration(
+      filled: true,
+      fillColor: const Color(0xFFF0F6FF),
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFFBBBBBB)),
+      prefixIcon: Icon(icon, color: _blue, size: 20),
+      suffixIcon: suffix,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      border: border(_blue),
+      enabledBorder: border(_blue),
+      focusedBorder: border(_blue),
+      errorBorder: border(AppTheme.errorRed),
+      focusedErrorBorder: border(AppTheme.errorRed),
+    );
   }
 
   void _handleContinue() {
@@ -96,6 +144,9 @@ class _LoginScreenState extends State<LoginScreen>
       // decir, el inicio de sesión con Google.
       listenWhen: (_, __) => ModalRoute.of(context)?.isCurrent ?? true,
       listener: (context, state) {
+        if (state is! AuthLoading && _emailSubmitting) {
+          setState(() => _emailSubmitting = false);
+        }
         if (state is AuthError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -256,6 +307,127 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ),
         const SizedBox(height: 24),
+
+        // Login con correo y contraseña
+        Form(
+          key: _emailFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autocorrect: false,
+                autofillHints: const [AutofillHints.email],
+                cursorColor: _blue,
+                style: const TextStyle(color: _textDark, fontSize: 16),
+                decoration: _emailFieldDecoration(
+                  hint: 'correo@ejemplo.com',
+                  icon: Icons.email_outlined,
+                ),
+                validator: (value) {
+                  final email = value?.trim() ?? '';
+                  if (email.isEmpty ||
+                      !email.contains('@') ||
+                      !email.contains('.')) {
+                    return 'Ingresa un correo válido';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
+                onFieldSubmitted: (_) => _handleEmailLogin(),
+                cursorColor: _blue,
+                style: const TextStyle(color: _textDark, fontSize: 16),
+                decoration: _emailFieldDecoration(
+                  hint: 'Contraseña',
+                  icon: Icons.lock_outline,
+                  suffix: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: const Color(0xFF888888),
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                validator: (value) {
+                  if ((value ?? '').isEmpty) return 'Ingresa tu contraseña';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Botón Ingresar con email
+        SizedBox(
+          height: 54,
+          child: ElevatedButton(
+            onPressed: _emailSubmitting ? null : _handleEmailLogin,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: _blue.withValues(alpha: 0.6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _emailSubmitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Ingresar con email',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ),
+
+        TextButton(
+          onPressed: () => context.push('/register-email'),
+          child: const Text(
+            'Crear cuenta con email',
+            style: TextStyle(color: _blue, fontWeight: FontWeight.w600),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        const Row(
+          children: [
+            Expanded(child: Divider(color: Color(0xFFEEEEEE))),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'o con tu celular',
+                style: TextStyle(color: Color(0xFFBBBBBB), fontSize: 12),
+              ),
+            ),
+            Expanded(child: Divider(color: Color(0xFFEEEEEE))),
+          ],
+        ),
+
+        const SizedBox(height: 16),
 
         // Campo de número de celular
         AnimatedContainer(
